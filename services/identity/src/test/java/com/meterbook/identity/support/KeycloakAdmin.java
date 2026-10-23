@@ -69,6 +69,23 @@ public final class KeycloakAdmin {
     return get(REALM + "/users?exact=true&username=" + encode(email)).get(0).get("id").asString();
   }
 
+  public JsonNode identityProvider(String alias) {
+    return get(REALM + "/identity-provider/instances/" + alias);
+  }
+
+  public List<String> identityProvidersOf(UUID organization) {
+    return get(REALM + "/organizations/" + organization + "/identity-providers")
+        .valueStream()
+        .map(p -> p.get("alias").asString())
+        .toList();
+  }
+
+  public boolean identityProviderExists(String alias) {
+    return get(REALM + "/identity-provider/instances")
+        .valueStream()
+        .anyMatch(p -> p.get("alias").asString().equals(alias));
+  }
+
   public void setPassword(UUID user, String password) {
     send(
         "PUT",

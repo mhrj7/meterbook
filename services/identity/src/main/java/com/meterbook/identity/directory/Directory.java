@@ -29,6 +29,29 @@ public interface Directory {
 
   void grantRealmRole(UUID user, String role);
 
+  /**
+   * A tenant's SAML 2.0 identity provider as Keycloak brokers it.
+   *
+   * @param serviceProviderEntityId the entity ID Keycloak presents to the IdP for this connection
+   * @param signingCertificate base64 DER of the IdP's signing certificate
+   */
+  record SamlProvider(
+      String alias,
+      String displayName,
+      String serviceProviderEntityId,
+      String idpEntityId,
+      String ssoUrl,
+      String signingCertificate) {}
+
+  /**
+   * Creates the identity provider and routes every email domain of the organization to it.
+   * Assertions must be signed by {@code signingCertificate}; first sign-ins link to the user with
+   * the same email.
+   */
+  void createSamlProvider(UUID organization, SamlProvider provider);
+
+  void deleteIdentityProvider(String alias);
+
   /** The directory could not be reached or failed; nothing can be assumed about the change. */
   final class UnavailableException extends RuntimeException {
     private static final long serialVersionUID = 1L;

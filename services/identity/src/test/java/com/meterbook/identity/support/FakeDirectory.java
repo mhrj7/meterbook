@@ -19,6 +19,8 @@ public final class FakeDirectory implements Directory {
   public final Map<UUID, String> users = new ConcurrentHashMap<>();
   public final Map<UUID, Set<UUID>> members = new ConcurrentHashMap<>();
   public final Map<UUID, Set<String>> roles = new ConcurrentHashMap<>();
+  public final Map<String, SamlProvider> providers = new ConcurrentHashMap<>();
+  public final Map<String, UUID> providerOrganizations = new ConcurrentHashMap<>();
   public final Map<String, AtomicInteger> calls = new ConcurrentHashMap<>();
   private final Map<String, RuntimeException> failures = new HashMap<>();
   private final Map<String, Runnable> hooks = new HashMap<>();
@@ -28,6 +30,8 @@ public final class FakeDirectory implements Directory {
     users.clear();
     members.clear();
     roles.clear();
+    providers.clear();
+    providerOrganizations.clear();
     calls.clear();
     failures.clear();
     hooks.clear();
@@ -114,5 +118,19 @@ public final class FakeDirectory implements Directory {
   public void grantRealmRole(UUID user, String role) {
     enter("grantRealmRole");
     roles.computeIfAbsent(user, u -> new HashSet<>()).add(role);
+  }
+
+  @Override
+  public void createSamlProvider(UUID organization, SamlProvider provider) {
+    enter("createSamlProvider");
+    providers.put(provider.alias(), provider);
+    providerOrganizations.put(provider.alias(), organization);
+  }
+
+  @Override
+  public void deleteIdentityProvider(String alias) {
+    enter("deleteIdentityProvider");
+    providers.remove(alias);
+    providerOrganizations.remove(alias);
   }
 }
