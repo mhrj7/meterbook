@@ -51,3 +51,8 @@ crash.log
 
 # Office lock files
 ~$*
+
+# Terraform local inputs (examples are committed)
+*.tfvars
+!*.tfvars.example
+backend.hcl

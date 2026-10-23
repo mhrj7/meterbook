@@ -1,0 +1,65 @@
+# Plans every environment on pull requests that touch infrastructure, using the read-only plan role (OIDC, no
+# static keys). Skipped until the AWS repository variables exist (see infra/terraform/README.md, step 4).
+name: Terraform plan
+
+on:
+  pull_request:
+    paths:
+      - 'infra/terraform/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: tf-plan-${{ github.ref }}
+  cancel-in-progress: true
+
+# Explicit bash runs every step with `-eo pipefail`, so a failing command piped into tee/grep fails the step.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  plan:
+    name: Plan ${{ matrix.env }}
+    if: vars.TF_STATE_BUCKET != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env: [dev, prod]
+    defaults:
+      run:
+        working-directory: infra/terraform/envs/${{ matrix.env }}
+    env:
+      TF_IN_AUTOMATION: "true"
+      TF_VAR_github_repository: ${{ github.repository }}
+      TF_VAR_admin_cidrs: ${{ vars.TF_ADMIN_CIDRS }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.TF_PLAN_ROLE }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+      - name: Init
+        run: >-
+          terraform init -input=false
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="region=${{ vars.AWS_REGION }}"
+          -backend-config="encrypt=true"
+          -backend-config="use_lockfile=true"
+      - name: Plan
+        run: terraform plan -input=false -lock-timeout=5m -no-color -out=tfplan
+      - name: Summarise
+        run: |
+          {
+            echo "### Terraform plan: ${{ matrix.env }}"
+            echo '```'
+            terraform show -no-color tfplan | tail -n 200
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
