@@ -12,3 +12,5 @@ to this index.
 | [0004](0004-secrets-management.md) | Secrets in AWS Secrets Manager, delivered to pods by External Secrets Operator with EKS Pod Identity | Accepted | MB-T04 |
 | [0005](0005-account-level-ci-roles-and-ephemeral-dev.md) | Account-level CI roles owned by bootstrap, and an ephemeral dev environment | Accepted | MB-T03 |
 | [0006](0006-gitops-with-argocd.md) | GitOps with ArgoCD, a shared Helm library chart, and SHA-pinned production | Accepted | MB-T06 |
+| [0007](0007-identity-keycloak-broker-and-scim.md) | Keycloak as authorization server and SSO broker, tenants as Keycloak organizations, SCIM in the identity service | Accepted | MB-T07 |
+| [0008](0008-java-service-stack.md) | Java service stack: Java 25, Spring Boot 4.1, Gradle 9, jOOQ and Flyway | Accepted | MB-T07 |

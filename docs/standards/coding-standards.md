@@ -19,12 +19,16 @@
 
 ## Java
 
-- Java 21, Spring Boot 3, Gradle Kotlin DSL. Virtual threads for blocking I/O.
+Stack and versions: [ADR-0008](../adr/0008-java-service-stack.md).
+
+- Java 25, Spring Boot 4.1, Gradle 9 Kotlin DSL (wrapper checked in, versions in `gradle/libs.versions.toml`).
+  Virtual threads for blocking I/O.
 - Immutability by default: `record` for DTOs and value objects.
 - Money: `long` minor units plus `Currency`; never `double`; `BigDecimal` only for rate maths, with explicit
   rounding mode.
-- SQL via jOOQ; migrations via Flyway. No JPA lazy loading across service boundaries.
-- Lint: Error Prone, SpotBugs, Checkstyle (Google style). Format: Spotless.
+- SQL via jOOQ (generated from the Flyway migrations); migrations via Flyway, additive only. No JPA.
+- Third-party clients (Keycloak, payment providers) sit behind an interface owned by the service.
+- Lint: Error Prone. Format: Spotless (google-java-format). Coverage: JaCoCo gate.
 
 ## TypeScript
 
