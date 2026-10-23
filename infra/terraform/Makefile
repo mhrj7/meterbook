@@ -33,4 +33,4 @@ lint:
 	tflint --recursive --config $(CURDIR)/.tflint.hcl
 
 scan:
-	trivy config --severity HIGH,CRITICAL --exit-code 1 .
+	trivy config --severity HIGH,CRITICAL --exit-code 1 --skip-dirs "**/.terraform" .
