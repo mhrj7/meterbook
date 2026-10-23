@@ -68,6 +68,18 @@ module "buckets" {
   tags          = merge(local.tags, { Purpose = each.key })
 }
 
+module "app_secrets" {
+  source = "../app-secrets"
+
+  name                       = local.name
+  cluster_name               = module.cluster.cluster_name
+  secret_names               = var.app_secret_names
+  extra_readable_secret_arns = compact([module.postgres.master_user_secret_arn])
+  recovery_window_days       = var.disposable ? 7 : 30
+  kms_deletion_window_days   = var.disposable ? 7 : 30
+  tags                       = local.tags
+}
+
 module "github_oidc" {
   source = "../github-oidc"
 

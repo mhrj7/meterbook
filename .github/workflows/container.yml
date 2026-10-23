@@ -21,6 +21,11 @@ permissions:
 env:
   TRIVY_VERSION: v0.76.1
 
+# Explicit bash runs every step with `-eo pipefail`, so a failing command piped into tee/grep fails the step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     name: Build, scan, sign

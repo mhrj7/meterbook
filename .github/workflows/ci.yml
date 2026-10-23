@@ -15,9 +15,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  HELM_VERSION: v4.3.1
+  KUBECONFORM_VERSION: v0.8.0
   TERRAFORM_VERSION: 1.13.5
   TFLINT_VERSION: v0.65.0
   TRIVY_VERSION: v0.76.1
+
+# Explicit bash runs every step with `-eo pipefail`, so a failing command piped into tee/grep fails the step.
+defaults:
+  run:
+    shell: bash
 
 jobs:
   changes:
@@ -28,6 +35,8 @@ jobs:
       pull-requests: read
     outputs:
       terraform: ${{ steps.filter.outputs.terraform }}
+      helm: ${{ steps.filter.outputs.helm }}
+      secrets-e2e: ${{ steps.filter.outputs.secrets-e2e }}
       workflows: ${{ steps.filter.outputs.workflows }}
       services: ${{ steps.services.outputs.list }}
     steps:
@@ -38,6 +47,13 @@ jobs:
           filters: |
             terraform:
               - 'infra/terraform/**'
+              - '.github/workflows/ci.yml'
+            helm:
+              - 'infra/helm/**'
+              - '.github/workflows/ci.yml'
+            secrets-e2e:
+              - 'infra/helm/platform-secrets/**'
+              - 'tests/integration/secrets/**'
               - '.github/workflows/ci.yml'
             workflows:
               - '.github/workflows/**'
@@ -98,6 +114,8 @@ jobs:
         run: make fmt
       - name: Validate (all roots and modules)
         run: make validate
+      - name: No secret values in Terraform
+        run: make no-secret-values
       - name: Unit tests (mocked providers)
         run: make test
       - name: Lint
@@ -115,6 +133,60 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           version: ${{ env.TRIVY_VERSION }}
+
+  helm:
+    name: Helm charts
+    needs: changes
+    if: needs.changes.outputs.helm == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install kubeconform
+        run: |
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+      - name: Lint
+        run: |
+          for chart in infra/helm/*/; do
+            for values in "$chart"values-*.yaml; do helm lint --strict "$chart" -f "$values"; done
+          done
+      - name: Render tests
+        run: |
+          for t in infra/helm/*/tests/render_test.sh; do bash "$t"; done
+
+  secrets-e2e:
+    name: Secrets end-to-end (kind)
+    needs: changes
+    if: needs.changes.outputs.secrets-e2e == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          cluster_name: secrets-e2e
+      - name: Run end-to-end test
+        run: bash tests/integration/secrets/e2e.sh | tee e2e.log
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### Secrets end-to-end'
+            echo '```'
+            grep -E '^(PASS|FAIL|===|[0-9]+ passed)' e2e.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          kubectl get externalsecrets,clustersecretstores -A -o wide || true
+          kubectl -n external-secrets logs deploy/external-secrets --tail=100 || true
 
   containers:
     name: Container ${{ matrix.service }}
@@ -136,7 +208,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [changes, secrets, workflow-lint, terraform, containers]
+    needs: [changes, secrets, workflow-lint, terraform, helm, secrets-e2e, containers]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs passed or were skipped

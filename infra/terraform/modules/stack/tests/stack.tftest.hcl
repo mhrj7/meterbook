@@ -33,6 +33,11 @@ mock_provider "aws" {
       version = "v1.0.0-eksbuild.1"
     }
   }
+  mock_data "aws_region" {
+    defaults = {
+      region = "us-east-1"
+    }
+  }
   mock_resource "aws_iam_openid_connect_provider" {
     defaults = {
       arn = "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com"
@@ -61,6 +66,11 @@ run "dev_stack_plans_with_account_scoped_bucket_names" {
       output.buckets["exports"] == "meterbook-dev-exports-111122223333"
     )
     error_message = "Bucket names must be <product>-<env>-<purpose>-<account>."
+  }
+
+  assert {
+    condition     = output.app_secrets.names["stripe-api-key"] == "meterbook-dev/stripe-api-key"
+    error_message = "App secrets must be namespaced by environment."
   }
 }
 

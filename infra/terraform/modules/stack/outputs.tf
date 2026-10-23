@@ -36,3 +36,11 @@ output "ci_roles" {
     apply = module.github_oidc.apply_role_arn
   }
 }
+
+output "app_secrets" {
+  description = "Application secret names (remote keys for ExternalSecrets) and the ESO role."
+  value = {
+    names        = module.app_secrets.secret_names
+    eso_role_arn = module.app_secrets.eso_role_arn
+  }
+}

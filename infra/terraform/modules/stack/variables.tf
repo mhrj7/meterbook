@@ -141,6 +141,18 @@ variable "db_performance_insights" {
   default     = false
 }
 
+# --- application secrets ---------------------------------------------------------------------------------------
+
+variable "app_secret_names" {
+  description = "Application secrets created as empty shells (values set out-of-band, ADR-0004)."
+  type        = list(string)
+  default = [
+    "stripe-api-key",
+    "stripe-webhook-signing-secret",
+    "identity-oidc-client-secret",
+  ]
+}
+
 # --- CI access -------------------------------------------------------------------------------------------------
 
 variable "github_repository" {
