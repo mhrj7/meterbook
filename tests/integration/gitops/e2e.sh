@@ -2,7 +2,7 @@
 # End-to-end test for the GitOps layout (MB-T06, ADR-0006) on a disposable cluster (kind):
 # installs ArgoCD, applies the projects and the dev/staging Applications pinned to the commit under test, and checks
 # that everything syncs, the smoke service runs hardened, and its NetworkPolicy is enforced.
-#   GITOPS_REVISION=<commit on GitHub> [KIND_CLUSTER=<name>] tests/integration/gitops/e2e.sh
+#   GITOPS_REVISION=<commit on GitHub> tests/integration/gitops/e2e.sh
 # Requires kubectl and helm, a throwaway kube context, and the commit to be pushed to the public repository.
 set -euo pipefail
 
@@ -50,25 +50,6 @@ ARGOCD_VALUES=(-f "$ROOT/infra/argocd/install/argocd-values.yaml" --set 'configs
 
 step "Install ArgoCD $ARGOCD_CHART_VERSION"
 helm repo add argo https://argoproj.github.io/argo-helm --force-update >/dev/null
-if [ -n "${KIND_CLUSTER:-}" ]; then
-  # Registries throttle anonymous pulls from shared CI addresses; pull on the host with retries and load the images
-  # into kind so the install does not depend on the cluster winning that race. Only the host's platform is
-  # exported: `kind load docker-image` imports all platforms and fails on Docker's containerd image store.
-  platform="linux/$(docker version --format '{{.Server.Arch}}')"
-  archive=$(mktemp)
-  for image in $(helm template argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" "${ARGOCD_VALUES[@]}" \
-      | awk '$1 == "image:" || $1 == "-" && $2 == "image:" {print $NF}' | tr -d '"' | sort -u); do
-    for attempt in 1 2 3 4 5; do
-      docker pull -q "$image" >/dev/null && break
-      [ "$attempt" -eq 5 ] && die "could not pull $image"
-      sleep $((attempt * 10))
-    done
-    docker save --platform "$platform" "$image" -o "$archive"
-    kind load image-archive "$archive" --name "$KIND_CLUSTER" >/dev/null
-  done
-  rm -f "$archive"
-  ok "ArgoCD images preloaded into kind"
-fi
 helm upgrade --install argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" --namespace argocd --create-namespace \
   --wait --timeout 10m "${ARGOCD_VALUES[@]}"
 ok "ArgoCD installed"

@@ -239,7 +239,6 @@ jobs:
       - name: Run end-to-end test
         env:
           GITOPS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
-          KIND_CLUSTER: gitops-e2e
         run: bash tests/integration/gitops/e2e.sh | tee e2e.log
       - name: Summarise
         if: always()
