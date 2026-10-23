@@ -1,0 +1,20 @@
+# Versions not managed by Spring Boot's BOM. Spring Boot manages Spring, Jackson, jOOQ, Flyway, PostgreSQL,
+# Testcontainers, JUnit, Micrometer and OpenTelemetry (ADR-0008).
+[versions]
+spring-boot = "4.1.2"
+spring-dependency-management = "1.1.7"
+spotless = "8.10.4"
+errorprone-plugin = "5.1.1"
+errorprone = "2.51.0"
+# 1.37.0 fails inside Spotless 8.10.4 (InvocationTargetException on every file); revisit with the next Spotless.
+google-java-format = "1.36.0"
+jacoco = "0.8.14"
+
+[libraries]
+errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
+spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "spring-dependency-management" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
