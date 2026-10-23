@@ -148,7 +148,10 @@ Building our own authorization server, Zitadel, and hosted vendors — see ADR-0
 - **Information disclosure:** cross-tenant access returns 404; logs never contain tokens, assertions or passwords.
 - **Denial of service:** Keycloak brute-force detection; per-tenant rate limits (MB-T12).
 - **Elevation of privilege:** a domain can map to only one tenant, and only a platform admin can add domains, so a
-  tenant cannot claim another company's users through an IdP it controls.
+  tenant cannot claim another company's users through an IdP it controls. The identity service account holds
+  `manage-users`, which in Keycloak allows mapping any realm role; the adapter therefore grants only `tenant-admin`
+  (enforced in code and tested). Restricting this inside Keycloak with fine-grained admin permissions is follow-up
+  work (MB-T11).
 - **Data:** emails and names are PII, stored only in Keycloak and `scim_users`; deleting a SCIM user deletes both.
 
 ## 10. Observability
