@@ -1,0 +1,4 @@
+# Copy to terraform.tfvars (git-ignored) and fill in.
+github_repository = "your-github-user/meterbook"
+state_bucket_name = "meterbook-tfstate-123456789012"
+# github_existing_oidc_provider_arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
