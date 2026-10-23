@@ -1,0 +1,23 @@
+# staging runs on the dev cluster and uses the dev AWS environment's secrets (ADR-0006).
+region: eu-north-1
+
+store:
+  # The dev release owns the cluster-wide store; staging only adds its ExternalSecrets.
+  create: false
+  allowedNamespaces:
+    - meterbook-staging
+
+externalSecrets:
+  - name: stripe
+    namespace: meterbook-staging
+    data:
+      - secretKey: STRIPE_API_KEY
+        remoteKey: meterbook-dev/stripe-api-key
+      - secretKey: STRIPE_WEBHOOK_SIGNING_SECRET
+        remoteKey: meterbook-dev/stripe-webhook-signing-secret
+  - name: identity-oidc
+    namespace: meterbook-staging
+    data:
+      - secretKey: OIDC_CLIENT_SECRET
+        remoteKey: meterbook-dev/identity-oidc-client-secret
+  # Database credentials (the RDS-managed secret) are added with the first service that needs them (MB-T07).

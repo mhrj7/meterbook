@@ -1,0 +1,27 @@
+# Platform components (External Secrets Operator, the secrets chart). They install CRDs, cluster roles, webhooks and
+# the cluster-wide ClusterSecretStore, so this project may manage cluster-scoped resources. Only platform
+# Applications use it.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+spec:
+  description: Cluster platform components
+  sourceRepos:
+    - https://github.com/mhrj7/meterbook.git
+    - https://charts.external-secrets.io
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: external-secrets
+    - server: https://kubernetes.default.svc
+      namespace: meterbook-dev
+    - server: https://kubernetes.default.svc
+      namespace: meterbook-staging
+    - server: https://kubernetes.default.svc
+      namespace: meterbook-prod
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"

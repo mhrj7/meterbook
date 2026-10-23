@@ -18,3 +18,8 @@ output "app_secrets" {
   description = "Secret names for ExternalSecrets and the ESO role (values are set out-of-band)."
   value       = module.stack.app_secrets
 }
+
+output "gitops_roots" {
+  description = "ArgoCD root Applications on this cluster."
+  value       = try(module.gitops[0].root_applications, [])
+}

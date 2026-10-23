@@ -61,6 +61,17 @@ variable "apply_role_name" {
   type        = string
 }
 
+variable "apply_max_session_seconds" {
+  description = "Maximum session length for the apply role (a dev apply-verify-destroy cycle runs ~45 minutes)."
+  type        = number
+  default     = 3600
+
+  validation {
+    condition     = var.apply_max_session_seconds >= 3600 && var.apply_max_session_seconds <= 14400
+    error_message = "apply_max_session_seconds must be between 1 and 4 hours."
+  }
+}
+
 variable "tags" {
   description = "Tags applied to all resources."
   type        = map(string)

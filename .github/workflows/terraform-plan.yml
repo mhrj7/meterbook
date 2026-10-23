@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'infra/terraform/**'
+      - 'infra/argocd/**' # the gitops module installs these files
 
 permissions:
   contents: read
@@ -38,6 +39,14 @@ jobs:
       TF_VAR_admin_cidrs: ${{ secrets.TF_ADMIN_CIDRS }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Mask allow-listed IPs
+        env:
+          ADMIN_CIDRS: ${{ secrets.TF_ADMIN_CIDRS }}
+        run: |
+          for cidr in $(jq -r '.[]' <<<"$ADMIN_CIDRS"); do
+            echo "::add-mask::$cidr"
+            echo "::add-mask::${cidr%/*}"
+          done
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.TF_PLAN_ROLE }}

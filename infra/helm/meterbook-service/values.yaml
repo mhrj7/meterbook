@@ -1,0 +1,68 @@
+# Values every Meterbook service sets. Security settings that are not listed here (non-root, read-only root
+# filesystem, no privilege escalation, dropped capabilities, seccomp) are fixed in meterbook-lib and cannot be
+# turned off.
+
+# Service name; defaults to the release name.
+name: ""
+
+image:
+  repository: ""        # required, e.g. ghcr.io/mhrj7/meterbook-identity
+  digest: ""            # preferred: sha256:... (immutable)
+  tag: ""               # used only when digest is empty; "latest" is rejected
+  pullPolicy: IfNotPresent
+
+command: []
+args: []
+containerPort: 8080
+
+# Plain environment variables (name/value). Secrets never go here.
+env: []
+# Kubernetes Secrets (synced from AWS Secrets Manager by External Secrets) loaded as environment variables.
+envFromSecrets: []
+
+replicas: 2             # ignored when autoscaling is enabled
+terminationGracePeriodSeconds: 30
+tmpSizeLimit: 64Mi
+
+securityContext:
+  runAsUser: 10001      # any non-root UID; 0 is rejected
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi       # memory limit required; no CPU limit by default (avoids throttling)
+
+probes:
+  startup:
+    path: /healthz
+    failureThreshold: 30
+  liveness:
+    path: /healthz
+  readiness:
+    path: /readyz
+
+service:
+  port: 80
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilization: 70
+
+pdb:
+  enabled: true
+  minAvailable: 1
+
+networkPolicy:
+  enabled: true
+  # Namespaces (besides this one) allowed to call this service.
+  allowFromNamespaces: []
+
+serviceAccount:
+  annotations: {}
+  automountToken: false
+
+podAnnotations: {}

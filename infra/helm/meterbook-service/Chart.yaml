@@ -1,0 +1,9 @@
+apiVersion: v2
+name: meterbook-service
+description: The one chart every Meterbook service deploys with; a service is a values file (ADR-0006).
+type: application
+version: 0.1.0
+dependencies:
+  - name: meterbook-lib
+    version: 0.1.0
+    repository: file://../meterbook-lib

@@ -35,7 +35,11 @@ module "eks" {
   deletion_protection = var.deletion_protection
 
   addons = {
-    vpc-cni                = { before_compute = true }
+    vpc-cni = {
+      before_compute = true
+      # Enforce Kubernetes NetworkPolicies (the meterbook-service chart ships one per service).
+      configuration_values = jsonencode({ enableNetworkPolicy = "true" })
+    }
     eks-pod-identity-agent = { before_compute = true }
     kube-proxy             = {}
     coredns                = {}

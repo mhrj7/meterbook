@@ -17,6 +17,7 @@ concurrency:
 env:
   HELM_VERSION: v4.3.1
   KUBECONFORM_VERSION: v0.8.0
+  KUBE_LINTER_VERSION: v0.8.3
   TERRAFORM_VERSION: 1.13.5
   TFLINT_VERSION: v0.65.0
   TRIVY_VERSION: v0.76.1
@@ -37,6 +38,7 @@ jobs:
       terraform: ${{ steps.filter.outputs.terraform }}
       helm: ${{ steps.filter.outputs.helm }}
       secrets-e2e: ${{ steps.filter.outputs.secrets-e2e }}
+      gitops: ${{ steps.filter.outputs.gitops }}
       workflows: ${{ steps.filter.outputs.workflows }}
       services: ${{ steps.services.outputs.list }}
     steps:
@@ -47,9 +49,19 @@ jobs:
           filters: |
             terraform:
               - 'infra/terraform/**'
+              - 'infra/argocd/**'
               - '.github/workflows/ci.yml'
             helm:
               - 'infra/helm/**'
+              - 'deploy/**'
+              - '.github/workflows/ci.yml'
+            gitops:
+              - 'infra/argocd/**'
+              - 'infra/helm/**'
+              - 'deploy/**'
+              - 'scripts/gitops_policy.py'
+              - 'scripts/tests/**'
+              - 'tests/integration/gitops/**'
               - '.github/workflows/ci.yml'
             secrets-e2e:
               - 'infra/helm/platform-secrets/**'
@@ -144,14 +156,19 @@ jobs:
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           version: ${{ env.HELM_VERSION }}
-      - name: Install kubeconform
+      - name: Install kubeconform and kube-linter
         run: |
           curl -sSfL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
             | tar -xz -C /usr/local/bin kubeconform
+          curl -sSfL "https://github.com/stackrox/kube-linter/releases/download/${KUBE_LINTER_VERSION}/kube-linter-linux.tar.gz" \
+            | tar -xz -C /usr/local/bin kube-linter
       - name: Lint
         run: |
-          for chart in infra/helm/*/; do
-            for values in "$chart"values-*.yaml; do helm lint --strict "$chart" -f "$values"; done
+          helm dependency build infra/helm/meterbook-service
+          # The service chart is linted with every service's values; other charts with their own values files.
+          for values in deploy/services/*/*.yaml; do helm lint --strict infra/helm/meterbook-service -f "$values"; done
+          for chart in infra/helm/platform-secrets; do
+            for values in "$chart"/values-*.yaml; do helm lint --strict "$chart" -f "$values"; done
           done
       - name: Render tests
         run: |
@@ -188,6 +205,51 @@ jobs:
           kubectl get externalsecrets,clustersecretstores -A -o wide || true
           kubectl -n external-secrets logs deploy/external-secrets --tail=100 || true
 
+  gitops-policy:
+    name: GitOps policy
+    needs: changes
+    if: needs.changes.outputs.gitops == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the prod pin must be reachable from main
+      - name: Install test dependencies
+        run: python3 -m pip install --quiet pyyaml==6.0.3 pytest==9.1.1
+      - name: Policy unit tests
+        run: python3 -m pytest -q scripts/tests
+      - name: Policy check on the repository
+        run: python3 scripts/gitops_policy.py
+
+  gitops-e2e:
+    name: GitOps end-to-end (kind + ArgoCD)
+    needs: changes
+    # ArgoCD fetches this commit from GitHub without credentials, so the repository must be public.
+    if: needs.changes.outputs.gitops == 'true' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - uses: helm/kind-action@1544676c07bb3570fcb70166beaa07c4528fd4aa # v1.15.1
+        with:
+          cluster_name: gitops-e2e
+      - name: Run end-to-end test
+        env:
+          GITOPS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: bash tests/integration/gitops/e2e.sh | tee e2e.log
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### GitOps end-to-end'
+            echo '```'
+            grep -E '^(PASS|FAIL|===|[0-9]+ passed)' e2e.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   containers:
     name: Container ${{ matrix.service }}
     needs: changes
@@ -208,7 +270,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [changes, secrets, workflow-lint, terraform, helm, secrets-e2e, containers]
+    needs: [changes, secrets, workflow-lint, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs passed or were skipped

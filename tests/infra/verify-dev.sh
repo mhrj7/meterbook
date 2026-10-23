@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Verifies a freshly applied dev environment against the security and reliability baseline (MB-T03, MB-T04),
-# using AWS APIs only. Run with credentials for the account, e.g. from the Terraform apply workflow.
+# Verifies a freshly applied dev environment against the security and reliability baseline (MB-T03, MB-T04, MB-T06):
+# AWS resources through AWS APIs, then GitOps, secrets delivery and workload hardening inside the cluster.
+# Run with credentials for the account and network access to the dev cluster API (the apply workflow does both).
 #   STATE_BUCKET=<bucket> AWS_REGION=eu-north-1 tests/infra/verify-dev.sh
 set -euo pipefail
 
@@ -66,6 +67,8 @@ WANT_ARCH=$([[ "$AMI_TYPE" == *ARM_64* ]] && echo arm64 || echo x86_64)
 check "worker nodes are $WANT_ARCH, matching node group AMI $AMI_TYPE" bash -c "
   aws ec2 describe-instances --filters Name=tag:eks:cluster-name,Values=$NAME Name=instance-state-name,Values=running \
     --query 'Reservations[].Instances[].Architecture' --output text | tr '\t' '\n' | grep -vqx $WANT_ARCH && exit 1 || exit 0"
+check "VPC CNI enforces NetworkPolicies" bash -c \
+  "aws eks describe-addon --cluster-name $NAME --addon-name vpc-cni --query addon.configurationValues --output text | grep -q enableNetworkPolicy"
 check "pod identity agent add-on ACTIVE" \
   eq "$(aws eks describe-addon --cluster-name "$NAME" --addon-name eks-pod-identity-agent --query addon.status --output text)" ACTIVE
 
@@ -107,6 +110,116 @@ check "ESO role may not read other secrets" bash -c "aws iam simulate-principal-
 check "ESO role may not write secrets" bash -c "aws iam simulate-principal-policy --policy-source-arn $ESO_ROLE \
   --action-names secretsmanager:PutSecretValue --resource-arns $STRIPE_ARN \
   --query 'EvaluationResults[0].EvalDecision' --output text | grep -qv allowed"
+
+# --- GitOps (MB-T06) and in-cluster secrets delivery (MB-T04) ---------------------------------------------------
+aws eks update-kubeconfig --name "$NAME" --region "$REGION" >/dev/null
+
+wait_until() { # wait_until <seconds> <command...>
+  local deadline=$((SECONDS + $1)); shift
+  until "$@" >/dev/null 2>&1; do
+    [ "$SECONDS" -ge "$deadline" ] && return 1
+    sleep 10
+  done
+}
+app_field() { kubectl -n argocd get application "$1" -o "jsonpath={$2}" 2>/dev/null; }
+app_synced() { [ "$(app_field "$1" .status.sync.status)" = Synced ]; }
+app_healthy() { [ "$(app_field "$1" .status.health.status)" = Healthy ]; }
+store_ready() {
+  [ "$(kubectl get clustersecretstore aws-secrets-manager -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}')" = True ]
+}
+k8s_secret() { kubectl -n "$1" get secret "$2" -o "jsonpath={.data.$3}" 2>/dev/null | base64 -d 2>/dev/null; }
+secret_is() { [ "$(k8s_secret "$1" "$2" "$3")" = "$4" ]; }
+deploy_ready() { [ "$(kubectl -n "$1" get deploy "$2" -o 'jsonpath={.status.availableReplicas}')" = "$3" ]; }
+
+check "ArgoCD server and controllers running" kubectl -n argocd rollout status deploy/argocd-server --timeout=300s
+
+for app in meterbook-dev-root meterbook-staging-root platform-external-secrets platform-secrets-dev platform-secrets-staging smoke-dev smoke-staging; do
+  if wait_until 900 app_synced "$app"; then ok "ArgoCD application $app Synced"; else bad "ArgoCD application $app Synced ($(app_field "$app" .status.sync.status))"; fi
+done
+for app in meterbook-dev-root meterbook-staging-root platform-external-secrets smoke-dev smoke-staging; do
+  if wait_until 600 app_healthy "$app"; then ok "ArgoCD application $app Healthy"; else bad "ArgoCD application $app Healthy ($(app_field "$app" .status.health.status))"; fi
+done
+
+if wait_until 300 store_ready; then
+  ok "ClusterSecretStore Ready: ESO authenticates to Secrets Manager through Pod Identity"
+else
+  bad "ClusterSecretStore Ready: ESO authenticates to Secrets Manager through Pod Identity"
+fi
+
+# Write test values into the (empty) dev secret shells, then expect them in both namespaces on the dev cluster.
+RUN_ID="verify-$(date +%s)-$RANDOM"
+for s in stripe-api-key stripe-webhook-signing-secret identity-oidc-client-secret; do
+  aws secretsmanager put-secret-value --secret-id "$NAME/$s" --secret-string "$RUN_ID-$s" >/dev/null
+done
+for ns in meterbook-dev meterbook-staging; do
+  kubectl -n "$ns" annotate externalsecret --all force-sync="$(date +%s)" --overwrite >/dev/null
+done
+for ns in meterbook-dev meterbook-staging; do
+  if wait_until 180 secret_is "$ns" stripe STRIPE_API_KEY "$RUN_ID-stripe-api-key"; then
+    ok "Secrets Manager value delivered to Kubernetes Secret in $ns"
+  else
+    bad "Secrets Manager value delivered to Kubernetes Secret in $ns"
+  fi
+done
+for app in platform-secrets-dev platform-secrets-staging; do
+  if wait_until 300 app_healthy "$app"; then ok "ArgoCD application $app Healthy"; else bad "ArgoCD application $app Healthy ($(app_field "$app" .status.health.status))"; fi
+done
+
+kubectl -n meterbook-dev apply -f - >/dev/null <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secret-reader
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65534
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: reader
+      image: busybox:1.37
+      command: ["sh", "-c", "echo \"key=${STRIPE_API_KEY}\""]
+      envFrom:
+        - secretRef:
+            name: stripe
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: ["ALL"]
+YAML
+reader_done() { [ "$(kubectl -n meterbook-dev get pod secret-reader -o 'jsonpath={.status.phase}')" = Succeeded ]; }
+if wait_until 180 reader_done && kubectl -n meterbook-dev logs secret-reader | grep -qx "key=$RUN_ID-stripe-api-key"; then
+  ok "a pod reads the AWS-managed secret at runtime"
+else
+  bad "a pod reads the AWS-managed secret at runtime"
+fi
+
+for ns in meterbook-dev meterbook-staging; do
+  if wait_until 300 deploy_ready "$ns" smoke 2; then ok "smoke service 2/2 available in $ns"; else bad "smoke service 2/2 available in $ns"; fi
+done
+check "smoke pods run as non-root with a read-only root filesystem" bash -c "
+  kubectl -n meterbook-dev get pods -l app.kubernetes.io/name=smoke -o jsonpath='{range .items[*]}{.spec.securityContext.runAsNonRoot} {.spec.containers[0].securityContext.readOnlyRootFilesystem}{\"\\n\"}{end}' \
+    | grep -v '^true true$' | grep -q . && exit 1 || exit 0"
+
+probe() { # probe <namespace> <pod-name>: HTTP GET to the dev smoke service from a pod in <namespace>
+  kubectl -n "$1" run "$2" --image=busybox:1.37 --restart=Never --rm -i --quiet \
+    --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
+    -- wget -q -T 5 -O- http://smoke.meterbook-dev.svc.cluster.local/healthz
+}
+if probe meterbook-dev np-allowed >/dev/null 2>&1; then
+  ok "NetworkPolicy: same-namespace traffic to the smoke service is allowed"
+else
+  bad "NetworkPolicy: same-namespace traffic to the smoke service is allowed"
+fi
+kubectl create namespace np-outsider --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+if probe np-outsider np-denied >/dev/null 2>&1; then
+  bad "NetworkPolicy: traffic from another namespace is blocked"
+else
+  ok "NetworkPolicy: traffic from another namespace is blocked"
+fi
 
 echo
 echo "---"

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: meterbook-lib
+description: Hardened Kubernetes templates shared by every Meterbook service (ADR-0006).
+type: library
+version: 0.1.0

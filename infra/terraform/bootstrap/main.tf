@@ -57,6 +57,7 @@ module "github_oidc" {
   state_bucket_arn          = module.state_bucket.arn
   plan_role_name            = "meterbook-terraform-plan"
   apply_role_name           = "meterbook-terraform-apply"
+  apply_max_session_seconds = 7200
 }
 
 import {

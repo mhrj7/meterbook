@@ -1,0 +1,39 @@
+# PROD: every git source is pinned to one commit SHA; change it only with scripts/promote-prod.sh (ADR-0006).
+# One Application per service: every deploy/services/<name>/prod.yaml becomes <name>-prod, rendered with the shared
+# meterbook-service chart into namespace meterbook-prod.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: services-prod
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/mhrj7/meterbook.git
+        revision: ba21d34205a3a5378634b970a6848bdced4e5e7d
+        files:
+          - path: "deploy/services/*/prod.yaml"
+  template:
+    metadata:
+      name: "{{ .path.basename }}-prod"
+    spec:
+      project: meterbook-apps
+      source:
+        repoURL: https://github.com/mhrj7/meterbook.git
+        targetRevision: ba21d34205a3a5378634b970a6848bdced4e5e7d
+        path: infra/helm/meterbook-service
+        helm:
+          releaseName: "{{ .path.basename }}"
+          valueFiles:
+            - "../../../{{ .path.path }}/prod.yaml"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: meterbook-prod
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

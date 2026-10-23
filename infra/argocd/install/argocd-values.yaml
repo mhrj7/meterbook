@@ -1,0 +1,27 @@
+# Values for the argo-cd chart, shared by Terraform (infra/terraform/modules/gitops) and the GitOps end-to-end test,
+# so the test installs ArgoCD exactly as the clusters do. Terraform layers the reconciliation interval on top.
+configs:
+  params:
+    # TLS terminates at kubectl port-forward / a future ingress; the server is never exposed publicly.
+    server.insecure: true
+dex:
+  enabled: false
+notifications:
+  enabled: false
+server:
+  service:
+    type: ClusterIP
+controller:
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+repoServer:
+  resources:
+    requests: { cpu: 50m, memory: 128Mi }
+    limits: { memory: 512Mi }
+redis:
+  image:
+    # The chart default (ecr-public.aws.com) throttles anonymous pulls from shared addresses ("Data limit exceeded").
+    # Same official image from Google's Docker Hub mirror, pinned by digest.
+    repository: mirror.gcr.io/library/redis
+    tag: 8.6.4-alpine@sha256:2cc044fc5a07c9b701f8f1255a309ae9ad7856e694ac03513bf3648c01e40763

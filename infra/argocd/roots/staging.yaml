@@ -1,0 +1,20 @@
+# Root app-of-apps for staging. Tracks main; reads infra/argocd/envs/staging.
+# Created by Terraform (infra/terraform/modules/gitops); never edited in the cluster.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: meterbook-staging-root
+  namespace: argocd
+spec:
+  project: bootstrap
+  sources:
+    - repoURL: https://github.com/mhrj7/meterbook.git
+      targetRevision: main
+      path: infra/argocd/envs/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

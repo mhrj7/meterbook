@@ -11,3 +11,4 @@ to this index.
 | [0003](0003-ci-and-supply-chain.md) | CI on GitHub Actions with a single required check and a signed, scanned image supply chain | Accepted | MB-T05 |
 | [0004](0004-secrets-management.md) | Secrets in AWS Secrets Manager, delivered to pods by External Secrets Operator with EKS Pod Identity | Accepted | MB-T04 |
 | [0005](0005-account-level-ci-roles-and-ephemeral-dev.md) | Account-level CI roles owned by bootstrap, and an ephemeral dev environment | Accepted | MB-T03 |
+| [0006](0006-gitops-with-argocd.md) | GitOps with ArgoCD, a shared Helm library chart, and SHA-pinned production | Accepted | MB-T06 |

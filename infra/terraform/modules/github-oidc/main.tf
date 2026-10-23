@@ -67,7 +67,7 @@ resource "aws_iam_role" "apply" {
   name                 = var.apply_role_name
   description          = "Terraform apply from protected GitHub environments (${var.github_repository})"
   assume_role_policy   = local.apply_trust_policy
-  max_session_duration = 3600
+  max_session_duration = var.apply_max_session_seconds
   tags                 = var.tags
 }
 
