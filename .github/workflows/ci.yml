@@ -21,6 +21,11 @@ env:
   TFLINT_VERSION: v0.65.0
   TRIVY_VERSION: v0.76.1
 
+# Explicit bash runs every step with `-eo pipefail`, so a failing command piped into tee/grep fails the step.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   changes:
     name: Detect changes
