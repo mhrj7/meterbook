@@ -38,13 +38,13 @@ variable "extra_readable_secret_arns" {
 }
 
 variable "recovery_window_days" {
-  description = "Days a deleted secret can be restored (7-30)."
+  description = "Days a deleted secret can be restored (7-30), or 0 to delete immediately (disposable environments only)."
   type        = number
   default     = 30
 
   validation {
-    condition     = var.recovery_window_days >= 7 && var.recovery_window_days <= 30
-    error_message = "recovery_window_days must be 7-30; 0 (force delete) is not allowed."
+    condition     = var.recovery_window_days == 0 || (var.recovery_window_days >= 7 && var.recovery_window_days <= 30)
+    error_message = "recovery_window_days must be 0 (immediate, disposable environments) or 7-30."
   }
 }
 

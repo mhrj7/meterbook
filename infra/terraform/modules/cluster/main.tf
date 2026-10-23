@@ -1,4 +1,4 @@
-# EKS cluster for Meterbook services. Graviton (arm64) managed nodes in private subnets, control-plane ENIs in
+# EKS cluster for Meterbook services. Managed nodes (Graviton by default) in private subnets, control-plane ENIs in
 # intra subnets, secrets envelope-encrypted with a dedicated KMS key, audit logging on.
 # Pods get AWS permissions through EKS Pod Identity (the agent add-on is installed here).
 
@@ -43,7 +43,7 @@ module "eks" {
 
   eks_managed_node_groups = {
     default = {
-      ami_type       = "AL2023_ARM_64_STANDARD"
+      ami_type       = var.node_ami_type
       instance_types = var.node_instance_types
       capacity_type  = var.node_capacity_type
 

@@ -60,6 +60,19 @@ jobs:
           -backend-config="region=${{ vars.AWS_REGION }}"
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"
+      - name: Purge dev secrets left pending deletion
+        if: inputs.environment == 'dev'
+        # A secret name cannot be reused while it is scheduled for deletion. dev is disposable and its secrets are
+        # empty shells, so leftovers from an interrupted run are removed before the apply recreates them.
+        run: |
+          arns=$(aws secretsmanager list-secrets --include-planned-deletion \
+            --filters Key=name,Values=meterbook-dev/ \
+            --query 'SecretList[?DeletedDate!=null].ARN' --output text)
+          for arn in $arns; do
+            echo "Purging $arn"
+            aws secretsmanager delete-secret --secret-id "$arn" --force-delete-without-recovery >/dev/null
+          done
+          if [ -n "$arns" ]; then sleep 20; fi
       - name: Plan
         working-directory: ${{ env.ENV_DIR }}
         run: terraform plan -input=false -lock-timeout=5m -no-color -out=tfplan

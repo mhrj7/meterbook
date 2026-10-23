@@ -34,6 +34,7 @@ module "cluster" {
   endpoint_public_access       = var.endpoint_public_access
   endpoint_public_access_cidrs = var.endpoint_public_access_cidrs
   node_instance_types          = var.node_instance_types
+  node_ami_type                = var.node_ami_type
   node_capacity_type           = var.node_capacity_type
   node_min_size                = var.node_min_size
   node_max_size                = var.node_max_size
@@ -75,7 +76,8 @@ module "app_secrets" {
   cluster_name               = module.cluster.cluster_name
   secret_names               = var.app_secret_names
   extra_readable_secret_arns = compact([module.postgres.master_user_secret_arn])
-  recovery_window_days       = var.disposable ? 7 : 30
-  kms_deletion_window_days   = var.disposable ? 7 : 30
-  tags                       = local.tags
+  # Disposable envs are recreated with the same secret names, which a recovery window would block.
+  recovery_window_days     = var.disposable ? 0 : 30
+  kms_deletion_window_days = var.disposable ? 7 : 30
+  tags                     = local.tags
 }

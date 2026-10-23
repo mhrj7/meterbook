@@ -61,9 +61,11 @@ check "node group $NG ACTIVE" \
 RUNNING=$(aws ec2 describe-instances --filters "Name=tag:eks:cluster-name,Values=$NAME" Name=instance-state-name,Values=running \
   --query 'length(Reservations[].Instances[])' --output text)
 check "worker nodes running ($RUNNING)" test "$RUNNING" -ge 1
-check "worker nodes are arm64 (Graviton)" bash -c "
+AMI_TYPE=$(aws eks describe-nodegroup --cluster-name "$NAME" --nodegroup-name "$NG" --query nodegroup.amiType --output text)
+WANT_ARCH=$([[ "$AMI_TYPE" == *ARM_64* ]] && echo arm64 || echo x86_64)
+check "worker nodes are $WANT_ARCH, matching node group AMI $AMI_TYPE" bash -c "
   aws ec2 describe-instances --filters Name=tag:eks:cluster-name,Values=$NAME Name=instance-state-name,Values=running \
-    --query 'Reservations[].Instances[].Architecture' --output text | tr '\t' '\n' | grep -vqx arm64 && exit 1 || exit 0"
+    --query 'Reservations[].Instances[].Architecture' --output text | tr '\t' '\n' | grep -vqx $WANT_ARCH && exit 1 || exit 0"
 check "pod identity agent add-on ACTIVE" \
   eq "$(aws eks describe-addon --cluster-name "$NAME" --addon-name eks-pod-identity-agent --query addon.status --output text)" ACTIVE
 
