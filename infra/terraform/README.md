@@ -25,7 +25,7 @@ modules/app-secrets/ app secret shells, KMS key, and the External Secrets Operat
 | Availability zones | 2 | 3 |
 | NAT gateways | 1 shared | 1 per AZ |
 | Kubernetes API | public, limited to `admin_cidrs` | private only |
-| Nodes | 1–3 × t4g.medium/large, **spot** | 3–9 × m7g.large, on-demand |
+| Nodes | 1–3 × t4g.medium, on-demand | 3–9 × m7g.large, on-demand |
 | PostgreSQL | db.t4g.micro, single-AZ, 1-day PITR | db.m7g.large, **multi-AZ**, 14-day PITR, Performance Insights |
 | Deletion protection / final snapshot | off (disposable) | on |
 | Log retention | 7 days | 90 days |
@@ -59,11 +59,11 @@ Rough figures for planning; confirm with the AWS Pricing Calculator before apply
 | Item | dev / month | prod / month |
 |---|---|---|
 | EKS control plane | ~$73 | ~$73 |
-| Nodes | ~$15 (2 × t4g.medium spot) | ~$180 (3 × m7g.large) |
+| Nodes | ~$50 (2 × t4g.medium) | ~$180 (3 × m7g.large) |
 | NAT gateways | ~$33 | ~$99 |
 | RDS (+ storage) | ~$15 | ~$250 (multi-AZ) |
 | Logs, KMS, EBS, S3 | ~$10 | ~$40 |
-| **Total** | **~$145** | **~$640** |
+| **Total** | **~$180** | **~$640** |
 
 **dev is ephemeral:** the apply workflow destroys it after verification by default, so a verification run costs roughly $1–3.
 

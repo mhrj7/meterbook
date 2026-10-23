@@ -1,4 +1,4 @@
-# dev: disposable and cheap — 2 AZs, one shared NAT gateway, spot nodes, single-AZ database, public Kubernetes API
+# dev: disposable and cheap — 2 AZs, one shared NAT gateway, small on-demand nodes, single-AZ database, public Kubernetes API
 # restricted to admin_cidrs. Destroy it when idle (see infra/terraform/README.md).
 
 terraform {
@@ -45,8 +45,10 @@ module "stack" {
   endpoint_public_access       = true
   endpoint_public_access_cidrs = var.admin_cidrs
 
-  node_instance_types = ["t4g.medium", "t4g.large"]
-  node_capacity_type  = "SPOT"
+  # On-demand: new AWS accounts get no Spot capacity (the first real apply failed with UnfulfillableCapacity), and
+  # dev only runs for the length of a verification session.
+  node_instance_types = ["t4g.medium"]
+  node_capacity_type  = "ON_DEMAND"
   node_min_size       = 1
   node_max_size       = 3
   node_desired_size   = 2
