@@ -1,5 +1,5 @@
 # Plans every environment on pull requests that touch infrastructure, using the read-only plan role (OIDC, no
-# static keys). Skipped until the AWS repository variables exist (see infra/terraform/README.md, step 4).
+# static keys). Skipped until TF_STATE_BUCKET and TF_PLAN_ROLE exist (bootstrap creates both; README step 3).
 name: Terraform plan
 
 on:
@@ -23,7 +23,7 @@ defaults:
 jobs:
   plan:
     name: Plan ${{ matrix.env }}
-    if: vars.TF_STATE_BUCKET != ''
+    if: vars.TF_STATE_BUCKET != '' && vars.TF_PLAN_ROLE != ''
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
