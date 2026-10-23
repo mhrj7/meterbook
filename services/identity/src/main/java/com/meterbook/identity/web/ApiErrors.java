@@ -28,14 +28,17 @@ public final class ApiErrors {
   }
 
   public AuthenticationEntryPoint unauthorized() {
-    return (request, response, e) ->
-        write(
-            request,
-            response,
-            401,
-            "authentication_error",
-            "invalid_credentials",
-            "missing, invalid or expired credentials");
+    return (request, response, e) -> {
+      // RFC 6750: tell the client which scheme to use.
+      response.setHeader("WWW-Authenticate", "Bearer realm=\"meterbook\"");
+      write(
+          request,
+          response,
+          401,
+          "authentication_error",
+          "invalid_credentials",
+          "missing, invalid or expired credentials");
+    };
   }
 
   public AccessDeniedHandler forbidden() {

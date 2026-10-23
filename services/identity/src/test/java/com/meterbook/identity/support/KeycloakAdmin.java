@@ -1,0 +1,171 @@
+package com.meterbook.identity.support;
+
+import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
+
+/**
+ * Test fixture: sets up organizations, users and clients through Keycloak's admin API (as an
+ * operator would), and fetches real tokens.
+ */
+public final class KeycloakAdmin {
+
+  private static final String REALM = "/admin/realms/meterbook";
+
+  private final KeycloakContainer keycloak;
+  private final HttpClient http = HttpClient.newHttpClient();
+  private final JsonMapper json = JsonMapper.builder().build();
+
+  public KeycloakAdmin(KeycloakContainer keycloak) {
+    this.keycloak = keycloak;
+  }
+
+  public UUID createOrganization(String alias, String domain) {
+    send(
+        "POST",
+        REALM + "/organizations",
+        Map.of("name", alias, "alias", alias, "domains", List.of(Map.of("name", domain))));
+    return UUID.fromString(
+        get(REALM + "/organizations?exact=true&search=" + alias).get(0).get("id").asString());
+  }
+
+  public UUID createUser(String email, String firstName, String lastName, String password) {
+    send(
+        "POST",
+        REALM + "/users",
+        Map.of(
+            "username", email,
+            "email", email,
+            "emailVerified", true,
+            "enabled", true,
+            "firstName", firstName,
+            "lastName", lastName,
+            "credentials",
+                List.of(Map.of("type", "password", "value", password, "temporary", false))));
+    return UUID.fromString(
+        get(REALM + "/users?exact=true&username=" + encode(email)).get(0).get("id").asString());
+  }
+
+  public void addMember(UUID organization, UUID user) {
+    send("POST", REALM + "/organizations/" + organization + "/members", user.toString());
+  }
+
+  public void grantRealmRole(UUID user, String role) {
+    JsonNode representation = get(REALM + "/roles/" + role);
+    send("POST", REALM + "/users/" + user + "/role-mappings/realm", List.of(representation));
+  }
+
+  /** A test-only client that allows the password grant, with the given default scopes. */
+  public void createPasswordClient(String clientId, List<String> scopes) {
+    send(
+        "POST",
+        REALM + "/clients",
+        Map.of(
+            "clientId", clientId,
+            "publicClient", true,
+            "directAccessGrantsEnabled", true,
+            "standardFlowEnabled", false,
+            "defaultClientScopes", scopes));
+  }
+
+  public String passwordToken(String clientId, String username, String password) {
+    return token(
+        Map.of(
+            "grant_type",
+            "password",
+            "client_id",
+            clientId,
+            "username",
+            username,
+            "password",
+            password));
+  }
+
+  public String clientCredentialsToken(String clientId, String secret) {
+    return token(
+        Map.of("grant_type", "client_credentials", "client_id", clientId, "client_secret", secret));
+  }
+
+  private String token(Map<String, String> form) {
+    String body =
+        form.entrySet().stream()
+            .map(e -> e.getKey() + "=" + encode(e.getValue()))
+            .collect(Collectors.joining("&"));
+    HttpRequest request =
+        HttpRequest.newBuilder(URI.create(keycloak.issuer() + "/protocol/openid-connect/token"))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+    return json.readTree(call(request, 200)).get("access_token").asString();
+  }
+
+  private String adminToken() {
+    String body =
+        "grant_type=password&client_id=admin-cli&username=admin&password="
+            + encode(KeycloakContainer.ADMIN_PASSWORD);
+    HttpRequest request =
+        HttpRequest.newBuilder(
+                URI.create(keycloak.baseUrl() + "/realms/master/protocol/openid-connect/token"))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+    return json.readTree(call(request, 200)).get("access_token").asString();
+  }
+
+  private JsonNode get(String path) {
+    HttpRequest request =
+        HttpRequest.newBuilder(URI.create(keycloak.baseUrl() + path))
+            .header("Authorization", "Bearer " + adminToken())
+            .GET()
+            .build();
+    return json.readTree(call(request, 200));
+  }
+
+  private void send(String method, String path, Object body) {
+    HttpRequest request =
+        HttpRequest.newBuilder(URI.create(keycloak.baseUrl() + path))
+            .header("Authorization", "Bearer " + adminToken())
+            .header("Content-Type", "application/json")
+            .method(method, HttpRequest.BodyPublishers.ofString(json.writeValueAsString(body)))
+            .build();
+    call(request, -1);
+  }
+
+  private String call(HttpRequest request, int expected) {
+    try {
+      HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
+      boolean ok =
+          expected < 0 ? response.statusCode() / 100 == 2 : response.statusCode() == expected;
+      if (!ok) {
+        throw new IllegalStateException(
+            request.method()
+                + " "
+                + request.uri()
+                + " -> "
+                + response.statusCode()
+                + ": "
+                + response.body());
+      }
+      return response.body();
+    } catch (IOException e) {
+      throw new IllegalStateException(e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
+  }
+
+  private static String encode(String value) {
+    return URLEncoder.encode(value, StandardCharsets.UTF_8);
+  }
+}

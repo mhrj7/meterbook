@@ -91,14 +91,16 @@ jobs:
           else
             changed=ALL
           fi
-          pick() { # pick <marker file>: changed service directories that contain it, as a JSON list
+          pick() { # pick <marker file> [extra pattern]: changed service directories that contain it, as a JSON list
             find services -mindepth 2 -maxdepth 2 -name "$1" -printf '%h\n' 2>/dev/null | while read -r dir; do
-              if [ "$changed" = ALL ] || grep -qE "^$dir/|$shared" <<<"$changed"; then basename "$dir"; fi
+              if [ "$changed" = ALL ] || grep -qE "^$dir/|$shared${2:+|$2}" <<<"$changed"; then basename "$dir"; fi
             done | sort | jq -R . | jq -cs .
           }
+          # Java tests also cover the Keycloak realm (tokens are validated against it) and the API contracts.
+          java_inputs='^infra/keycloak/|^contracts/'
           echo "list=$(pick Dockerfile)" >> "$GITHUB_OUTPUT"
-          echo "java=$(pick gradlew)" >> "$GITHUB_OUTPUT"
-          echo "Images: $(pick Dockerfile)  Java: $(pick gradlew)"
+          echo "java=$(pick gradlew "$java_inputs")" >> "$GITHUB_OUTPUT"
+          echo "Images: $(pick Dockerfile)  Java: $(pick gradlew "$java_inputs")"
 
   secrets:
     name: Secret scan
