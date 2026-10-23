@@ -1,5 +1,6 @@
 package com.meterbook.identity.web;
 
+import com.meterbook.identity.security.CallerTokenConverter;
 import java.security.SecureRandom;
 import java.time.Clock;
 import org.springframework.boot.security.autoconfigure.actuate.web.servlet.EndpointRequest;
@@ -54,6 +55,12 @@ public class SecurityConfig {
         .csrf(csrf -> csrf.disable())
         .httpBasic(basic -> basic.disable())
         .formLogin(form -> form.disable())
+        .oauth2ResourceServer(
+            oauth ->
+                oauth
+                    .jwt(jwt -> jwt.jwtAuthenticationConverter(new CallerTokenConverter()))
+                    .authenticationEntryPoint(errors.unauthorized())
+                    .accessDeniedHandler(errors.forbidden()))
         .exceptionHandling(
             e ->
                 e.authenticationEntryPoint(errors.unauthorized())

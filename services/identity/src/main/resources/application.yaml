@@ -9,6 +9,15 @@ spring:
     default-property-inclusion: non_null
   lifecycle:
     timeout-per-shutdown-phase: 20s
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # The issuer is Keycloak's public URL (what tokens say); the JWKS is fetched over the internal URL.
+          # With both set, nothing is fetched at start-up, so the service starts while Keycloak is down.
+          issuer-uri: ${KEYCLOAK_ISSUER:http://localhost:8180/realms/meterbook}
+          jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/meterbook/protocol/openid-connect/certs}
+          audiences: meterbook-api
 
 server:
   port: 8080
