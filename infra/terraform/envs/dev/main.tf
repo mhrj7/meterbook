@@ -54,9 +54,4 @@ module "stack" {
   db_instance_class        = "db.t4g.micro"
   db_multi_az              = false
   db_backup_retention_days = 1
-
-  github_repository           = var.github_repository
-  github_apply_environment    = "dev"
-  github_create_oidc_provider = true
-  state_bucket_name           = var.state_bucket_name
 }

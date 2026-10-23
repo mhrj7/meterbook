@@ -1,13 +1,10 @@
-# Applies infrastructure. dev applies automatically after merge to main; prod only by manual dispatch.
-# Each job runs in a protected GitHub environment (required reviewers, main only) — the apply role trusts only
-# those environments, so this workflow is the only way to change AWS.
+# Applies an environment from main, through a protected GitHub environment (the apply role trusts only those).
+# dev is disposable: after apply it is verified against real AWS and, by default, destroyed again so it never
+# runs (and costs) unattended. The destroy job runs even when apply or verify fail, to clean up partial resources.
+# prod is never destroyed by this workflow.
 name: Terraform apply
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'infra/terraform/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -15,44 +12,48 @@ on:
         type: choice
         options: [dev, production]
         default: dev
+      destroy_after:
+        description: "dev only: destroy after verification"
+        type: boolean
+        default: true
 
 permissions:
   contents: read
   id-token: write
 
-# Explicit bash runs every step with `-eo pipefail`, so a failing command piped into tee/grep fails the step.
 defaults:
   run:
     shell: bash
 
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_VAR_github_repository: ${{ github.repository }}
+  TF_VAR_admin_cidrs: ${{ vars.TF_ADMIN_CIDRS }}
+  ENV_DIR: infra/terraform/envs/${{ inputs.environment == 'production' && 'prod' || 'dev' }}
+
 jobs:
   apply:
-    name: Apply ${{ inputs.environment || 'dev' }}
+    name: Apply ${{ inputs.environment }}
     if: vars.TF_STATE_BUCKET != '' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'dev' }}
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 60
     concurrency:
-      group: tf-apply-${{ inputs.environment || 'dev' }}
+      group: tf-${{ inputs.environment }}
       cancel-in-progress: false
-    defaults:
-      run:
-        working-directory: infra/terraform/envs/${{ (inputs.environment || 'dev') == 'production' && 'prod' || 'dev' }}
-    env:
-      TF_IN_AUTOMATION: "true"
-      TF_VAR_github_repository: ${{ github.repository }}
-      TF_VAR_state_bucket_name: ${{ vars.TF_STATE_BUCKET }}
-      TF_VAR_admin_cidrs: ${{ vars.TF_ADMIN_CIDRS }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.TF_APPLY_ROLE }}
           aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.13.5
           terraform_wrapper: false
       - name: Init
+        working-directory: ${{ env.ENV_DIR }}
         run: >-
           terraform init -input=false
           -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
@@ -60,6 +61,87 @@ jobs:
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"
       - name: Plan
+        working-directory: ${{ env.ENV_DIR }}
         run: terraform plan -input=false -lock-timeout=5m -no-color -out=tfplan
       - name: Apply
-        run: terraform apply -input=false -lock-timeout=5m tfplan
+        working-directory: ${{ env.ENV_DIR }}
+        run: |
+          start=$(date +%s)
+          terraform apply -input=false -lock-timeout=5m tfplan
+          echo "Apply took $(( $(date +%s) - start ))s" >> "$GITHUB_STEP_SUMMARY"
+      - name: Outputs
+        working-directory: ${{ env.ENV_DIR }}
+        run: |
+          {
+            echo '### Outputs'
+            echo '```'
+            terraform output -no-color
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  verify:
+    name: Verify dev on AWS
+    needs: apply
+    if: inputs.environment == 'dev'
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.TF_APPLY_ROLE }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Verify resources against the security baseline
+        env:
+          STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: bash tests/infra/verify-dev.sh | tee verify.log
+      - name: Summarise
+        if: always()
+        run: |
+          {
+            echo '### Verification'
+            echo '```'
+            grep -E '^(PASS|FAIL|[0-9]+ passed)' verify.log || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  destroy:
+    name: Destroy dev
+    needs: [apply, verify]
+    if: >-
+      always() && inputs.environment == 'dev' && inputs.destroy_after &&
+      (needs.apply.result == 'success' || needs.apply.result == 'failure' || needs.apply.result == 'cancelled')
+    runs-on: ubuntu-latest
+    environment: dev
+    timeout-minutes: 60
+    concurrency:
+      group: tf-dev
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.TF_APPLY_ROLE }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 3600
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+      - name: Init
+        working-directory: infra/terraform/envs/dev
+        run: >-
+          terraform init -input=false
+          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="region=${{ vars.AWS_REGION }}"
+          -backend-config="encrypt=true"
+          -backend-config="use_lockfile=true"
+      - name: Destroy
+        working-directory: infra/terraform/envs/dev
+        run: |
+          start=$(date +%s)
+          terraform destroy -input=false -lock-timeout=5m -auto-approve
+          echo "Destroy took $(( $(date +%s) - start ))s" >> "$GITHUB_STEP_SUMMARY"
+          left=$(terraform state list | wc -l)
+          echo "Resources left in state: $left" >> "$GITHUB_STEP_SUMMARY"
+          [ "$left" -eq 0 ]

@@ -153,35 +153,6 @@ variable "app_secret_names" {
   ]
 }
 
-# --- CI access -------------------------------------------------------------------------------------------------
-
-variable "github_repository" {
-  description = "owner/name of the GitHub repository that runs Terraform."
-  type        = string
-}
-
-variable "github_apply_environment" {
-  description = "Protected GitHub environment whose jobs may apply this environment."
-  type        = string
-}
-
-variable "github_create_oidc_provider" {
-  description = "Create the account-wide GitHub OIDC provider (only one environment per AWS account)."
-  type        = bool
-  default     = true
-}
-
-variable "github_existing_oidc_provider_arn" {
-  description = "Existing GitHub OIDC provider when not creating one."
-  type        = string
-  default     = null
-}
-
-variable "state_bucket_name" {
-  description = "Terraform state bucket created by bootstrap/."
-  type        = string
-}
-
 variable "tags" {
   description = "Extra tags for every resource."
   type        = map(string)

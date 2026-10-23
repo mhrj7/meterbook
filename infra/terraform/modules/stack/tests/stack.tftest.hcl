@@ -38,11 +38,6 @@ mock_provider "aws" {
       region = "us-east-1"
     }
   }
-  mock_resource "aws_iam_openid_connect_provider" {
-    defaults = {
-      arn = "arn:aws:iam::111122223333:oidc-provider/token.actions.githubusercontent.com"
-    }
-  }
 }
 
 mock_provider "tls" {}
@@ -51,10 +46,7 @@ mock_provider "cloudinit" {}
 mock_provider "null" {}
 
 variables {
-  environment              = "dev"
-  github_repository        = "acme/meterbook"
-  github_apply_environment = "dev"
-  state_bucket_name        = "meterbook-tfstate-111122223333"
+  environment = "dev"
 }
 
 run "dev_stack_plans_with_account_scoped_bucket_names" {
@@ -79,7 +71,6 @@ run "prod_rejects_single_az_database" {
 
   variables {
     environment              = "prod"
-    github_apply_environment = "production"
     db_backup_retention_days = 14
     db_multi_az              = false
   }
@@ -92,7 +83,6 @@ run "prod_rejects_short_backup_retention" {
 
   variables {
     environment              = "prod"
-    github_apply_environment = "production"
     db_multi_az              = true
     db_backup_retention_days = 7
   }
@@ -105,7 +95,6 @@ run "prod_rejects_shared_nat_gateway" {
 
   variables {
     environment              = "prod"
-    github_apply_environment = "production"
     db_multi_az              = true
     db_backup_retention_days = 14
     single_nat_gateway       = true
@@ -119,7 +108,6 @@ run "prod_can_never_be_disposable" {
 
   variables {
     environment              = "prod"
-    github_apply_environment = "production"
     db_multi_az              = true
     db_backup_retention_days = 14
     disposable               = true
@@ -133,7 +121,6 @@ run "prod_rejects_two_azs" {
 
   variables {
     environment              = "prod"
-    github_apply_environment = "production"
     db_multi_az              = true
     db_backup_retention_days = 14
     az_count                 = 2
@@ -147,7 +134,6 @@ run "valid_prod_stack_plans" {
 
   variables {
     environment              = "prod"
-    github_apply_environment = "production"
     db_multi_az              = true
     db_backup_retention_days = 14
   }

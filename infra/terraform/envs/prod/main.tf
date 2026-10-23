@@ -52,10 +52,4 @@ module "stack" {
   db_multi_az              = true
   db_backup_retention_days = 14
   db_performance_insights  = true
-
-  github_repository                 = var.github_repository
-  github_apply_environment          = "production"
-  github_create_oidc_provider       = var.github_existing_oidc_provider_arn == null
-  github_existing_oidc_provider_arn = var.github_existing_oidc_provider_arn
-  state_bucket_name                 = var.state_bucket_name
 }
