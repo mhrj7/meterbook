@@ -44,8 +44,11 @@ jobs:
       gitops: ${{ steps.filter.outputs.gitops }}
       workflows: ${{ steps.filter.outputs.workflows }}
       services: ${{ steps.services.outputs.list }}
+      java: ${{ steps.services.outputs.java }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       - id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
@@ -76,12 +79,26 @@ jobs:
             workflows:
               - '.github/workflows/**'
       - id: services
-        name: List services with a Dockerfile
+        name: List changed services
+        # A service is built when its directory, the shared pipelines or this workflow changed (every service on a
+        # base we cannot compare with). Java services are the ones with a Gradle wrapper.
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          list=$(find services -mindepth 2 -maxdepth 2 -name Dockerfile -printf '%h\n' 2>/dev/null \
-            | xargs -r -n1 basename | sort | jq -R . | jq -cs .)
-          echo "list=${list:-[]}" >> "$GITHUB_OUTPUT"
-          echo "Services: ${list:-[]}"
+          shared='^\.github/workflows/(ci|container)\.yml$'
+          if [ -n "$BASE" ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            changed=$(git diff --name-only "$BASE" HEAD)
+          else
+            changed=ALL
+          fi
+          pick() { # pick <marker file>: changed service directories that contain it, as a JSON list
+            find services -mindepth 2 -maxdepth 2 -name "$1" -printf '%h\n' 2>/dev/null | while read -r dir; do
+              if [ "$changed" = ALL ] || grep -qE "^$dir/|$shared" <<<"$changed"; then basename "$dir"; fi
+            done | sort | jq -R . | jq -cs .
+          }
+          echo "list=$(pick Dockerfile)" >> "$GITHUB_OUTPUT"
+          echo "java=$(pick gradlew)" >> "$GITHUB_OUTPUT"
+          echo "Images: $(pick Dockerfile)  Java: $(pick gradlew)"
 
   secrets:
     name: Secret scan
@@ -256,10 +273,63 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+  java:
+    name: Java ${{ matrix.service }} (format, compile, test, coverage)
+    needs: changes
+    if: needs.changes.outputs.java != '[]'
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.java) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+      # Validates the checked-in wrapper jar against Gradle's published checksums and caches dependencies.
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Check (Spotless, Error Prone, tests, coverage gate)
+        run: ./gradlew check --no-daemon
+      - name: Summarise
+        if: always()
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, os, xml.etree.ElementTree as ET
+          tests = failures = 0
+          for f in glob.glob("build/test-results/test/*.xml"):
+              r = ET.parse(f).getroot()
+              tests += int(r.get("tests")); failures += int(r.get("failures")) + int(r.get("errors"))
+          print(f"### Java {os.environ['SERVICE']}\n\n{tests} tests, {failures} failed")
+          report = "build/reports/jacoco/test/jacocoTestReport.xml"
+          if os.path.exists(report):
+              for c in ET.parse(report).getroot().findall("counter"):
+                  if c.get("type") in ("LINE", "BRANCH"):
+                      m, cv = int(c.get("missed")), int(c.get("covered"))
+                      print(f"- {c.get('type').lower()} coverage: {cv / (m + cv):.1%}")
+          PY
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports-${{ matrix.service }}
+          path: services/${{ matrix.service }}/build/reports
+          retention-days: 7
+
   containers:
     name: Container ${{ matrix.service }}
-    needs: changes
-    if: needs.changes.outputs.services != '[]'
+    # After the Java tests, so an image is only built (and on main, published) from code that passed them.
+    needs: [changes, java]
+    if: ${{ !failure() && !cancelled() && needs.changes.outputs.services != '[]' }}
     strategy:
       fail-fast: false
       matrix:
@@ -310,7 +380,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [changes, secrets, workflow-lint, contracts, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
+    needs: [changes, secrets, workflow-lint, contracts, java, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs passed or were skipped
