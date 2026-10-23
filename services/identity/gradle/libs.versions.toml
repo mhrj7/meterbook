@@ -9,8 +9,11 @@ errorprone = "2.51.0"
 # 1.37.0 fails inside Spotless 8.10.4 (InvocationTargetException on every file); revisit with the next Spotless.
 google-java-format = "1.36.0"
 jacoco = "0.8.14"
+# Must equal the jOOQ version Spring Boot manages.
+jooq = "3.21.9"
 
 [libraries]
+jooq-meta-extensions = { module = "org.jooq:jooq-meta-extensions", version.ref = "jooq" }
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 
 [plugins]
@@ -18,3 +21,4 @@ spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
 spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "spring-dependency-management" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
+jooq-codegen = { id = "org.jooq.jooq-codegen-gradle", version.ref = "jooq" }
