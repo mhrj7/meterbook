@@ -51,4 +51,4 @@ fi
 aws iam attach-role-policy --role-name "$ROLE" --policy-arn arn:aws:iam::aws:policy/AdministratorAccess
 
 echo
-echo "Set GitHub repository variable TF_APPLY_ROLE=arn:aws:iam::${ACCOUNT}:role/${ROLE}"
+echo "Set GitHub repository secret TF_APPLY_ROLE=arn:aws:iam::${ACCOUNT}:role/${ROLE}"
