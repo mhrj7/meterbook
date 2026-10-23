@@ -1,5 +1,5 @@
 # Copy to backend.hcl (git-ignored), then: terraform init -backend-config=backend.hcl
 bucket       = "meterbook-tfstate-123456789012"
-region       = "us-east-1"
+region       = "eu-north-1"
 encrypt      = true
 use_lockfile = true

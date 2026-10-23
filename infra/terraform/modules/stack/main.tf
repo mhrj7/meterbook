@@ -79,16 +79,3 @@ module "app_secrets" {
   kms_deletion_window_days   = var.disposable ? 7 : 30
   tags                       = local.tags
 }
-
-module "github_oidc" {
-  source = "../github-oidc"
-
-  github_repository     = var.github_repository
-  create_provider       = var.github_create_oidc_provider
-  existing_provider_arn = var.github_existing_oidc_provider_arn
-  apply_environments    = [var.github_apply_environment]
-  state_bucket_arn      = "arn:aws:s3:::${var.state_bucket_name}"
-  plan_role_name        = "${local.name}-terraform-plan"
-  apply_role_name       = "${local.name}-terraform-apply"
-  tags                  = local.tags
-}

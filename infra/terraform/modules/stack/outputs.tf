@@ -29,13 +29,6 @@ output "buckets" {
   depends_on  = [module.buckets]
 }
 
-output "ci_roles" {
-  description = "Roles for GitHub Actions (set as repository variables)."
-  value = {
-    plan  = module.github_oidc.plan_role_arn
-    apply = module.github_oidc.apply_role_arn
-  }
-}
 
 output "app_secrets" {
   description = "Application secret names (remote keys for ExternalSecrets) and the ESO role."

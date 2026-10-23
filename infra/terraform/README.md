@@ -6,7 +6,7 @@ to deploy. Decisions are recorded in [ADR-0002](../../docs/adr/0002-infrastructu
 ## Layout
 
 ```
-bootstrap/          one-time: Terraform state bucket (local state, run by an admin)
+bootstrap/          account level: state bucket, GitHub OIDC provider, CI plan/apply roles (run by CI)
 envs/dev/           dev root module   — disposable, cheap
 envs/prod/          prod root module  — highly available, protected
 modules/stack/      one complete environment; holds the dev-vs-prod guard rails
@@ -14,7 +14,7 @@ modules/network/    VPC: public / private / database / intra subnets, NAT, flow 
 modules/cluster/    EKS, Graviton managed nodes, KMS-encrypted secrets, audit logs     (wraps terraform-aws-modules/eks)
 modules/postgres/   RDS PostgreSQL: private, encrypted, TLS-only, RDS-managed password
 modules/bucket/     S3: private, versioned, encrypted, TLS 1.2+ only
-modules/github-oidc/ GitHub Actions -> AWS roles without static keys (plan: read-only, apply: protected envs)
+modules/github-oidc/ GitHub Actions -> AWS roles without static keys (used by bootstrap)
 modules/app-secrets/ app secret shells, KMS key, and the External Secrets Operator Pod Identity role (ADR-0004)
 ```
 
@@ -52,7 +52,7 @@ The stack module refuses unsafe prod settings (single-AZ DB, < 14 days of backup
 
 Each is suppressed inline with a `#trivy:ignore` comment next to its justification.
 
-## Cost estimate (us-east-1, on-demand list prices, before data transfer)
+## Cost estimate (on-demand list prices, before data transfer; eu-north-1 is similar or slightly cheaper)
 
 Rough figures for planning; confirm with the AWS Pricing Calculator before applying.
 
@@ -65,37 +65,34 @@ Rough figures for planning; confirm with the AWS Pricing Calculator before apply
 | Logs, KMS, EBS, S3 | ~$10 | ~$40 |
 | **Total** | **~$145** | **~$640** |
 
-**dev is meant to be destroyed when idle** (`terraform destroy` in `envs/dev`); a weekday-only dev costs a few dollars a day.
+**dev is ephemeral:** the apply workflow destroys it after verification by default, so a verification run costs roughly $1–3.
 
-## First-time setup
+## First-time setup (once per AWS account)
 
-1. **Bootstrap the state bucket** (once per AWS account, with admin credentials):
-   ```bash
-   cd bootstrap
-   terraform init
-   terraform apply -var state_bucket_name=meterbook-tfstate-<account-id>
-   ```
-2. **Configure an environment:** in `envs/dev`, copy `backend.hcl.example` to `backend.hcl` and
-   `terraform.tfvars.example` to `terraform.tfvars`, and fill in the values (both files are git-ignored).
-3. **First apply** (creates the CI roles; later applies run from CI, MB-T05):
-   ```bash
-   cd envs/dev
-   terraform init -backend-config=backend.hcl
-   terraform plan -out=tfplan
-   terraform apply tfplan
-   ```
-4. Connect CI (workflows in `.github/workflows/`, decisions in ADR-0003). Create the GitHub environments `dev` and
-   `production` with required reviewers and a `main`-only branch rule, then set these variables:
+Decisions in [ADR-0005](../../docs/adr/0005-account-level-ci-roles-and-ephemeral-dev.md). Nobody runs Terraform
+from a laptop; every apply runs in GitHub Actions through OIDC roles.
 
-   | Variable | Scope | Value |
-   |---|---|---|
-   | `AWS_REGION` | repository | e.g. `us-east-1` |
-   | `TF_STATE_BUCKET` | repository | bootstrap output `state_bucket` |
-   | `TF_PLAN_ROLE_DEV` / `TF_PLAN_ROLE_PROD` | repository | `ci_roles.plan` output of each env |
-   | `TF_APPLY_ROLE` | environment (`dev`, `production`) | `ci_roles.apply` output of that env |
-   | `TF_ADMIN_CIDRS` | repository | JSON list, e.g. `["203.0.113.10/32"]` |
+1. **Seed CI access:** in AWS CloudShell, as an administrator, run
+   `bash scripts/cloudshell-bootstrap.sh <owner>/meterbook`. It creates the GitHub OIDC provider and the
+   `meterbook-terraform-apply` role, trusted only by this repository's `dev` and `production` GitHub environments.
+2. **Repository settings:** GitHub environments `dev` and `production`, each limited to the `main` branch, and these
+   repository variables:
 
-   Until `TF_STATE_BUCKET` is set, the plan and apply workflows skip themselves; the checks in `ci.yml` always run.
+   | Variable | Value |
+   |---|---|
+   | `AWS_REGION` | `eu-north-1` |
+   | `TF_STATE_BUCKET` | `meterbook-tfstate-<account-id>` |
+   | `TF_APPLY_ROLE` | `arn:aws:iam::<account-id>:role/meterbook-terraform-apply` (printed by step 1) |
+   | `TF_PLAN_ROLE` | `arn:aws:iam::<account-id>:role/meterbook-terraform-plan` (after step 3) |
+   | `TF_ADMIN_CIDRS` | JSON list of IPs allowed to reach the dev Kubernetes API, e.g. `["203.0.113.10/32"]` |
+
+3. **Run the "Terraform bootstrap" workflow** (Actions → Terraform bootstrap → Run). It creates the state bucket and
+   the plan role, adopts the seeded provider and apply role into Terraform, and moves its own state into the bucket.
+4. **Run the "Terraform apply" workflow** with `environment: dev`. It applies dev, verifies it against the security
+   baseline on real AWS (`tests/infra/verify-dev.sh`) and then destroys it, unless `destroy_after` is unchecked.
+   Production applies use `environment: production` and are never destroyed by CI.
+
+Pull requests that touch `infra/terraform/**` get a plan for dev and prod from the read-only plan role.
 
 ## Checks
 

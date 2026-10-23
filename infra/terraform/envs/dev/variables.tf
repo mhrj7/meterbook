@@ -1,16 +1,11 @@
 variable "region" {
   description = "AWS region."
   type        = string
-  default     = "us-east-1"
+  default     = "eu-north-1"
 }
 
 variable "github_repository" {
-  description = "owner/name of the GitHub repository that runs Terraform."
-  type        = string
-}
-
-variable "state_bucket_name" {
-  description = "State bucket created by bootstrap/ (same value as in backend.hcl)."
+  description = "owner/name of the GitHub repository (used for resource tags)."
   type        = string
 }
 
