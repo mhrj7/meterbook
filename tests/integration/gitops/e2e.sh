@@ -2,7 +2,7 @@
 # End-to-end test for the GitOps layout (MB-T06, ADR-0006) on a disposable cluster (kind):
 # installs ArgoCD, applies the projects and the dev/staging Applications pinned to the commit under test, and checks
 # that everything syncs, the smoke service runs hardened, and its NetworkPolicy is enforced.
-#   GITOPS_REVISION=<commit on GitHub> tests/integration/gitops/e2e.sh
+#   GITOPS_REVISION=<commit on GitHub> [KIND_CLUSTER=<name>] tests/integration/gitops/e2e.sh
 # Requires kubectl and helm, a throwaway kube context, and the commit to be pushed to the public repository.
 set -euo pipefail
 
@@ -26,6 +26,7 @@ on_exit() {
       kubectl -n argocd get "$a" -o jsonpath='{.metadata.name}{": "}{.status.conditions}{" "}{.status.operationState.message}{"\n"}' 2>/dev/null || true
     done
     kubectl get pods -A 2>/dev/null | grep -v Running || true
+    kubectl get events -A --field-selector type=Warning --sort-by=.lastTimestamp 2>/dev/null | tail -20 || true
   fi
   exit "$rc"
 }
@@ -44,12 +45,27 @@ app_synced() { [ "$(app_field "$1" .status.sync.status)" = Synced ]; }
 app_healthy() { [ "$(app_field "$1" .status.health.status)" = Healthy ]; }
 deploy_ready() { [ "$(kubectl -n "$1" get deploy "$2" -o 'jsonpath={.status.availableReplicas}')" = "$3" ]; }
 
+ARGOCD_VALUES=(--set dex.enabled=false --set notifications.enabled=false
+  --set 'configs.params.server\.insecure=true' --set 'configs.cm.timeout\.reconciliation=20s')
+
 step "Install ArgoCD $ARGOCD_CHART_VERSION"
 helm repo add argo https://argoproj.github.io/argo-helm --force-update >/dev/null
+if [ -n "${KIND_CLUSTER:-}" ]; then
+  # Public registries throttle anonymous pulls from shared CI addresses; pull on the host with retries and load the
+  # images into kind so the install does not depend on the cluster winning that race.
+  for image in $(helm template argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" "${ARGOCD_VALUES[@]}" \
+      | awk '$1 == "image:" || $1 == "-" && $2 == "image:" {print $NF}' | tr -d '"' | sort -u); do
+    for attempt in 1 2 3 4 5; do
+      docker pull -q "$image" >/dev/null && break
+      [ "$attempt" -eq 5 ] && die "could not pull $image"
+      sleep $((attempt * 10))
+    done
+    kind load docker-image "$image" --name "$KIND_CLUSTER" >/dev/null
+  done
+  ok "ArgoCD images preloaded into kind"
+fi
 helm upgrade --install argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" --namespace argocd --create-namespace \
-  --wait --timeout 10m \
-  --set dex.enabled=false --set notifications.enabled=false \
-  --set 'configs.params.server\.insecure=true' --set 'configs.cm.timeout\.reconciliation=20s'
+  --wait --timeout 10m "${ARGOCD_VALUES[@]}"
 ok "ArgoCD installed"
 
 step "Projects and roots"
