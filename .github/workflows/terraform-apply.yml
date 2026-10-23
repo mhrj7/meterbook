@@ -37,7 +37,7 @@ env:
 jobs:
   dev:
     name: Dev cycle (apply, verify, destroy)
-    if: inputs.environment == 'dev' && vars.TF_STATE_BUCKET != '' && github.ref == 'refs/heads/main'
+    if: inputs.environment == 'dev' && vars.AWS_REGION != '' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: dev
     timeout-minutes: 115
@@ -51,8 +51,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.TF_APPLY_ROLE }}
+          role-to-assume: ${{ secrets.TF_APPLY_ROLE }}
           aws-region: ${{ vars.AWS_REGION }}
+          mask-aws-account-id: true
           role-duration-seconds: 7200
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
@@ -73,7 +74,7 @@ jobs:
         id: init
         run: >-
           terraform init -input=false
-          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
           -backend-config="region=${{ vars.AWS_REGION }}"
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"
@@ -100,7 +101,7 @@ jobs:
       - name: Verify (AWS baseline, GitOps, secrets delivery, workload hardening)
         working-directory: .
         env:
-          STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+          STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
         run: bash tests/infra/verify-dev.sh | tee verify.log
       - name: Summarise verification
         if: always() && steps.apply.outcome != 'skipped'
@@ -124,7 +125,7 @@ jobs:
 
   production:
     name: Apply production
-    if: inputs.environment == 'production' && vars.TF_STATE_BUCKET != '' && github.ref == 'refs/heads/main'
+    if: inputs.environment == 'production' && vars.AWS_REGION != '' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: production
     timeout-minutes: 90
@@ -138,8 +139,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
-          role-to-assume: ${{ vars.TF_APPLY_ROLE }}
+          role-to-assume: ${{ secrets.TF_APPLY_ROLE }}
           aws-region: ${{ vars.AWS_REGION }}
+          mask-aws-account-id: true
           role-duration-seconds: 7200
       - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
@@ -148,7 +150,7 @@ jobs:
       - name: Init
         run: >-
           terraform init -input=false
-          -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}"
+          -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}"
           -backend-config="region=${{ vars.AWS_REGION }}"
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"

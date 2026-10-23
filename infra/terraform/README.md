@@ -79,13 +79,16 @@ from a laptop; every apply runs in GitHub Actions through OIDC roles.
 2. **Repository settings:** GitHub environments `dev` and `production`, each limited to the `main` branch, and these
    repository variables and secrets:
 
-   | Variable | Value |
-   |---|---|
-   | `AWS_REGION` | `eu-north-1` |
-   | `TF_STATE_BUCKET` | `meterbook-tfstate-<account-id>` |
-   | `TF_APPLY_ROLE` | `arn:aws:iam::<account-id>:role/meterbook-terraform-apply` (printed by step 1) |
-   | `TF_PLAN_ROLE` | `arn:aws:iam::<account-id>:role/meterbook-terraform-plan` (after step 3) |
-   | `TF_ADMIN_CIDRS` (**secret**, so it is masked in logs) | JSON list of IPs allowed to reach the dev Kubernetes API, e.g. `["203.0.113.10/32"]` |
+   | Name | Kind | Value |
+   |---|---|---|
+   | `AWS_REGION` | variable | `eu-north-1` |
+   | `TF_STATE_BUCKET` | secret | `meterbook-tfstate-<account-id>` |
+   | `TF_APPLY_ROLE` | secret | `arn:aws:iam::<account-id>:role/meterbook-terraform-apply` (printed by step 1) |
+   | `TF_PLAN_ROLE` | secret | `arn:aws:iam::<account-id>:role/meterbook-terraform-plan` (after step 3) |
+   | `TF_ADMIN_CIDRS` | secret | JSON list of IPs allowed to reach the dev Kubernetes API, e.g. `["203.0.113.10/32"]` |
+
+   Everything that contains the account ID or an address is a secret, and the workflows also set
+   `mask-aws-account-id`, so neither appears in the public Actions logs.
 
 3. **Run the "Terraform bootstrap" workflow** (Actions → Terraform bootstrap → Run). It creates the state bucket and
    the plan role, adopts the seeded provider and apply role into Terraform, and moves its own state into the bucket.

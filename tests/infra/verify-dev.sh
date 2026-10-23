@@ -20,7 +20,7 @@ check() { # check <description> <command...>: passes when the command exits 0
 }
 eq() { [ "$1" = "$2" ]; }
 
-echo "Account $ACCOUNT, region $REGION"
+echo "Region $REGION"
 
 # --- Terraform state ------------------------------------------------------------------------------------------
 check "state stored in s3://$STATE_BUCKET/dev/terraform.tfstate" \
