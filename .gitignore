@@ -1,0 +1,53 @@
+# OS / editors
+.DS_Store
+._*
+.idea/
+.vscode/
+*.swp
+
+# Secrets — use .env.example with placeholders
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+
+# Java / Gradle
+.gradle/
+build/
+*.class
+
+# Rust
+target/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+dist/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Test artefacts
+/tests/**/results/
+*.jfr
+
+# Office lock files
+~$*

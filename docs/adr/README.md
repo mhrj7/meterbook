@@ -1,0 +1,9 @@
+# Architecture Decision Records
+
+New ADR: copy [`template.md`](template.md) to `NNNN-short-title.md` with the next number, open a PR, and add it
+to this index.
+
+| ADR | Title | Status | Task |
+|---|---|---|---|
+| [0000](0000-record-architecture-decisions.md) | Record architecture decisions | Accepted | MB-T01 |
+| [0001](0001-standalone-product-repository.md) | Standalone product repository with per-service builds | Accepted | MB-T01 |
