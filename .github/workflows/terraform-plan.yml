@@ -35,7 +35,7 @@ jobs:
     env:
       TF_IN_AUTOMATION: "true"
       TF_VAR_github_repository: ${{ github.repository }}
-      TF_VAR_admin_cidrs: ${{ vars.TF_ADMIN_CIDRS }}
+      TF_VAR_admin_cidrs: ${{ secrets.TF_ADMIN_CIDRS }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0

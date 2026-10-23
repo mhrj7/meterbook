@@ -77,7 +77,7 @@ from a laptop; every apply runs in GitHub Actions through OIDC roles.
    `gh api repos/<owner>/meterbook/actions/oidc/customization/sub` prints it). It creates the GitHub OIDC provider and the
    `meterbook-terraform-apply` role, trusted only by this repository's `dev` and `production` GitHub environments.
 2. **Repository settings:** GitHub environments `dev` and `production`, each limited to the `main` branch, and these
-   repository variables:
+   repository variables and secrets:
 
    | Variable | Value |
    |---|---|
@@ -85,7 +85,7 @@ from a laptop; every apply runs in GitHub Actions through OIDC roles.
    | `TF_STATE_BUCKET` | `meterbook-tfstate-<account-id>` |
    | `TF_APPLY_ROLE` | `arn:aws:iam::<account-id>:role/meterbook-terraform-apply` (printed by step 1) |
    | `TF_PLAN_ROLE` | `arn:aws:iam::<account-id>:role/meterbook-terraform-plan` (after step 3) |
-   | `TF_ADMIN_CIDRS` | JSON list of IPs allowed to reach the dev Kubernetes API, e.g. `["203.0.113.10/32"]` |
+   | `TF_ADMIN_CIDRS` (**secret**, so it is masked in logs) | JSON list of IPs allowed to reach the dev Kubernetes API, e.g. `["203.0.113.10/32"]` |
 
 3. **Run the "Terraform bootstrap" workflow** (Actions → Terraform bootstrap → Run). It creates the state bucket and
    the plan role, adopts the seeded provider and apply role into Terraform, and moves its own state into the bucket.
