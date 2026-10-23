@@ -109,6 +109,9 @@ jobs:
         with:
           scan-type: config
           scan-ref: infra/terraform
+          # Downloaded upstream modules (incl. their example manifests) live in .terraform/ after validate;
+          # Trivy still evaluates those modules through our module calls.
+          skip-dirs: "**/.terraform"
           severity: HIGH,CRITICAL
           exit-code: "1"
           version: ${{ env.TRIVY_VERSION }}
