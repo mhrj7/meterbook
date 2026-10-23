@@ -1,0 +1,127 @@
+package com.meterbook.identity.directory;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.meterbook.identity.support.KeycloakAdmin;
+import com.meterbook.identity.support.KeycloakContainer;
+import com.meterbook.identity.support.MutableClock;
+import java.time.Duration;
+import java.util.List;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+
+/** The Keycloak adapter against a real Keycloak running Meterbook's realm. */
+@Testcontainers
+class KeycloakDirectoryTest {
+
+  @Container static final KeycloakContainer KEYCLOAK = new KeycloakContainer();
+
+  private static final MutableClock CLOCK = new MutableClock();
+  private static KeycloakDirectory directory;
+  private static KeycloakAdmin admin;
+
+  @BeforeAll
+  static void connect() {
+    directory = directory(KEYCLOAK.baseUrl(), KeycloakContainer.IDENTITY_CLIENT_SECRET);
+    admin = new KeycloakAdmin(KEYCLOAK);
+  }
+
+  private static KeycloakDirectory directory(String baseUrl, String secret) {
+    return new KeycloakDirectory(
+        RestClient.builder(),
+        new KeycloakProperties(
+            baseUrl, "meterbook", "meterbook-identity", secret, Duration.ofSeconds(2)),
+        CLOCK);
+  }
+
+  private static String unique(String prefix) {
+    return prefix + "-" + UUID.randomUUID().toString().substring(0, 8);
+  }
+
+  @Test
+  void creates_and_deletes_organizations() {
+    String alias = unique("org");
+    UUID id = directory.createOrganization("Org " + alias, alias, List.of(alias + ".test"));
+    assertThat(admin.organizationExists(id)).isTrue();
+
+    directory.deleteOrganization(id);
+    directory.deleteOrganization(id); // deleting twice is fine
+    assertThat(admin.organizationExists(id)).isFalse();
+  }
+
+  @Test
+  void a_domain_or_name_already_in_use_is_a_conflict() {
+    String alias = unique("dup");
+    directory.createOrganization("Name " + alias, alias, List.of(alias + ".test"));
+
+    assertThatThrownBy(
+            () ->
+                directory.createOrganization(
+                    "Other " + alias, unique("x"), List.of(alias + ".test")))
+        .isInstanceOf(Directory.ConflictException.class);
+    assertThatThrownBy(
+            () ->
+                directory.createOrganization(
+                    "Name " + alias, unique("y"), List.of(unique("z") + ".test")))
+        .isInstanceOf(Directory.ConflictException.class);
+  }
+
+  @Test
+  void manages_users_memberships_and_roles() {
+    String alias = unique("acme");
+    String email = "ada@" + alias + ".test";
+    UUID organization = directory.createOrganization(alias, alias, List.of(alias + ".test"));
+
+    assertThat(directory.findUserByEmail(email)).isEmpty();
+    UUID user = directory.createUser(email, "Ada", "Lovelace");
+    assertThat(directory.findUserByEmail(email)).contains(user);
+    assertThatThrownBy(() -> directory.createUser(email, "", ""))
+        .isInstanceOf(Directory.ConflictException.class);
+
+    assertThat(directory.organizationsOf(user)).isEmpty();
+    directory.addMember(organization, user);
+    directory.addMember(organization, user); // already a member: no error
+    assertThat(directory.organizationsOf(user)).containsExactly(organization);
+
+    directory.grantRealmRole(user, "tenant-admin");
+    directory.grantRealmRole(user, "tenant-admin"); // already granted: no error
+    assertThat(admin.realmRolesOf(user)).contains("tenant-admin");
+    assertThatThrownBy(() -> directory.grantRealmRole(user, "platform-admin"))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(admin.realmRolesOf(user)).doesNotContain("platform-admin");
+
+    directory.deleteUser(user);
+    directory.deleteUser(user);
+    assertThat(admin.userExists(user)).isFalse();
+  }
+
+  @Test
+  void renews_its_token_when_it_expires() {
+    directory.findUserByEmail("nobody@example.test");
+    CLOCK.advance(Duration.ofHours(1));
+
+    assertThat(directory.findUserByEmail("nobody@example.test")).isEmpty();
+  }
+
+  @Test
+  void an_unreachable_keycloak_is_unavailable_not_an_error() {
+    KeycloakDirectory unreachable = directory("http://localhost:1", "x");
+
+    assertThatThrownBy(() -> unreachable.findUserByEmail("a@b.test"))
+        .isInstanceOf(Directory.UnavailableException.class);
+  }
+
+  @Test
+  void wrong_credentials_are_a_configuration_error() {
+    KeycloakDirectory misconfigured = directory(KEYCLOAK.baseUrl(), "wrong-secret");
+
+    assertThatThrownBy(() -> misconfigured.findUserByEmail("a@b.test"))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("401");
+  }
+}

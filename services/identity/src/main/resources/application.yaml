@@ -39,6 +39,14 @@ spring:
           jwk-set-uri: ${KEYCLOAK_JWKS_URI:http://localhost:8180/realms/meterbook/protocol/openid-connect/certs}
           audiences: meterbook-api
 
+identity:
+  keycloak:
+    base-url: ${KEYCLOAK_URL:http://localhost:8180}
+    realm: meterbook
+    client-id: meterbook-identity
+    client-secret: ${KEYCLOAK_CLIENT_SECRET}
+    timeout: 2s
+
 server:
   port: 8080
   shutdown: graceful

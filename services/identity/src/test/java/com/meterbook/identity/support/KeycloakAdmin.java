@@ -65,6 +65,36 @@ public final class KeycloakAdmin {
     send("POST", REALM + "/users/" + user + "/role-mappings/realm", List.of(representation));
   }
 
+  public String findUserId(String email) {
+    return get(REALM + "/users?exact=true&username=" + encode(email)).get(0).get("id").asString();
+  }
+
+  public void setPassword(UUID user, String password) {
+    send(
+        "PUT",
+        REALM + "/users/" + user + "/reset-password",
+        Map.of("type", "password", "value", password, "temporary", false));
+  }
+
+  public List<String> realmRolesOf(UUID user) {
+    return get(REALM + "/users/" + user + "/role-mappings/realm")
+        .valueStream()
+        .map(r -> r.get("name").asString())
+        .toList();
+  }
+
+  public boolean organizationExists(UUID organization) {
+    return get(REALM + "/organizations?first=0&max=1000")
+        .valueStream()
+        .anyMatch(o -> o.get("id").asString().equals(organization.toString()));
+  }
+
+  public boolean userExists(UUID user) {
+    return get(REALM + "/users?first=0&max=1000")
+        .valueStream()
+        .anyMatch(u -> u.get("id").asString().equals(user.toString()));
+  }
+
   /** A test-only client that allows the password grant, with the given default scopes. */
   public void createPasswordClient(String clientId, List<String> scopes) {
     send(
