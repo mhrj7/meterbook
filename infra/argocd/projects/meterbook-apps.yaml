@@ -1,0 +1,40 @@
+# Meterbook services. Least privilege: only the namespaced kinds the meterbook-service chart renders, only in the
+# meterbook-* namespaces, only from this repository.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: meterbook-apps
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+spec:
+  description: Meterbook services (one Application per service per environment)
+  sourceRepos:
+    - https://github.com/mhrj7/meterbook.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: meterbook-dev
+    - server: https://kubernetes.default.svc
+      namespace: meterbook-staging
+    - server: https://kubernetes.default.svc
+      namespace: meterbook-prod
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: apps
+      kind: Deployment
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ServiceAccount
+    - group: ""
+      kind: ConfigMap
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: external-secrets.io
+      kind: ExternalSecret

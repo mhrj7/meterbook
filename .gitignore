@@ -56,3 +56,6 @@ crash.log
 *.tfvars
 !*.tfvars.example
 backend.hcl
+
+# Helm dependencies are rebuilt from Chart.lock (helm dependency build)
+infra/helm/*/charts/

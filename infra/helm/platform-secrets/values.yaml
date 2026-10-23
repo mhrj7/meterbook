@@ -2,6 +2,9 @@
 region: ""
 
 store:
+  # Create the ClusterSecretStore in this release. On a cluster shared by several environments, exactly one release
+  # creates it and lists every environment's namespace in allowedNamespaces; the others set create: false.
+  create: true
   name: aws-secrets-manager
   # Namespaces allowed to use the store. ExternalSecrets in any other namespace are refused by ESO.
   allowedNamespaces: []

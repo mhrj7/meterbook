@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
+# ok/bad always return 0, so `cond && ok || bad` is a safe if/else in this file.
+# shellcheck disable=SC2015
 # Render tests for the platform-secrets chart. Requires helm and kubeconform on PATH.
 #   infra/helm/platform-secrets/tests/render_test.sh
 set -euo pipefail
-# ok/bad always return 0, so `cond && ok || bad` is a safe if/else here.
-# shellcheck disable=SC2015
 
 CHART="$(cd "$(dirname "$0")/.." && pwd)"
 SCHEMAS='https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
@@ -27,19 +27,27 @@ expect_render_fails() {
   fi
 }
 
-for env in dev prod; do
+for env in dev staging prod; do
   out=$(render -f "$CHART/values-$env.yaml")
+  case $env in
+    dev)     stores=1; keys=dev;  foreign=prod ;;
+    staging) stores=0; keys=dev;  foreign=prod ;;   # staging runs on the dev cluster with dev AWS secrets
+    prod)    stores=1; keys=prod; foreign=dev ;;
+  esac
 
-  [ "$(grep -c '^kind: ClusterSecretStore$' <<<"$out")" -eq 1 ] && ok "$env: one ClusterSecretStore" || bad "$env: one ClusterSecretStore"
+  [ "$(grep -c '^kind: ClusterSecretStore$' <<<"$out")" -eq "$stores" ] && ok "$env: $stores ClusterSecretStore" || bad "$env: $stores ClusterSecretStore"
   [ "$(grep -c '^kind: ExternalSecret$' <<<"$out")" -eq 2 ] && ok "$env: two ExternalSecrets" || bad "$env: two ExternalSecrets"
-  grep -q "key: meterbook-$env/stripe-api-key" <<<"$out" && ok "$env: remote keys are environment-scoped" || bad "$env: remote keys are environment-scoped"
-  if grep -q "meterbook-$([ "$env" = dev ] && echo prod || echo dev)/" <<<"$out"; then
-    bad "$env: references another environment's secrets"
+  [ "$(grep -c "namespace: meterbook-$env$" <<<"$out")" -eq 2 ] && ok "$env: ExternalSecrets in namespace meterbook-$env" || bad "$env: ExternalSecrets in namespace meterbook-$env"
+  grep -q "key: meterbook-$keys/stripe-api-key" <<<"$out" && ok "$env: reads meterbook-$keys/* secrets" || bad "$env: reads meterbook-$keys/* secrets"
+  if grep -q "meterbook-$foreign/" <<<"$out"; then
+    bad "$env: references meterbook-$foreign secrets"
   else
-    ok "$env: never references another environment's secrets"
+    ok "$env: never references meterbook-$foreign secrets"
   fi
-  grep -A2 'conditions:' <<<"$out" | grep -q '"meterbook"' && ok "$env: store restricted to the meterbook namespace" || bad "$env: store restricted to the meterbook namespace"
-  grep -q 'auth:' <<<"$out" && bad "$env: store must not embed credentials" || ok "$env: store embeds no credentials (Pod Identity)"
+  if [ "$stores" -eq 1 ]; then
+    grep -A3 'conditions:' <<<"$out" | grep -q "\"meterbook-$env\"" && ok "$env: store restricted to listed namespaces" || bad "$env: store restricted to listed namespaces"
+    grep -q 'auth:' <<<"$out" && bad "$env: store must not embed credentials" || ok "$env: store embeds no credentials (Pod Identity)"
+  fi
 
   if kubeconform -strict -summary -schema-location default -schema-location "$SCHEMAS" <<<"$out" >/tmp/kubeconform.out 2>&1; then
     ok "$env: manifests valid against ESO CRD schemas"
@@ -47,6 +55,9 @@ for env in dev prod; do
     bad "$env: manifests valid against ESO CRD schemas"; cat /tmp/kubeconform.out
   fi
 done
+
+out=$(render -f "$CHART/values-dev.yaml")
+grep -A4 'conditions:' <<<"$out" | grep -q '"meterbook-staging"' && ok "dev store also admits the staging namespace (shared cluster)" || bad "dev store also admits the staging namespace (shared cluster)"
 
 expect_render_fails "refuses an unrestricted store" "allowedNamespaces must list at least one namespace" \
   --set region=us-east-1

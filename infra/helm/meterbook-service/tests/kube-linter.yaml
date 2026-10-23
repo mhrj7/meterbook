@@ -1,0 +1,6 @@
+checks:
+  addAllBuiltIn: false
+  # kube-linter's default checks, minus one deliberate choice:
+  exclude:
+    # CPU limits cause throttling under burst; services set CPU requests and a memory limit (ADR-0006).
+    - unset-cpu-requirements

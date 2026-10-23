@@ -1,20 +1,23 @@
-region: us-east-1
+region: eu-north-1
 
 store:
+  # dev and staging share the dev cluster; this release owns the cluster-wide store for both.
+  create: true
   allowedNamespaces:
-    - meterbook
+    - meterbook-dev
+    - meterbook-staging
 
 externalSecrets:
   - name: stripe
-    namespace: meterbook
+    namespace: meterbook-dev
     data:
       - secretKey: STRIPE_API_KEY
         remoteKey: meterbook-dev/stripe-api-key
       - secretKey: STRIPE_WEBHOOK_SIGNING_SECRET
         remoteKey: meterbook-dev/stripe-webhook-signing-secret
   - name: identity-oidc
-    namespace: meterbook
+    namespace: meterbook-dev
     data:
       - secretKey: OIDC_CLIENT_SECRET
         remoteKey: meterbook-dev/identity-oidc-client-secret
-  # Database credentials (the RDS-managed secret) are wired in MB-T06 from the Terraform output database.secret_arn.
+  # Database credentials (the RDS-managed secret) are added with the first service that needs them (MB-T07).

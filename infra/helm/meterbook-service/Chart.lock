@@ -1,0 +1,6 @@
+dependencies:
+- name: meterbook-lib
+  repository: file://../meterbook-lib
+  version: 0.1.0
+digest: sha256:232dd524d41c6ed8ee7299eb94e7e90e6256a60120450b61f8f6cee92a2f9471
+generated: "2026-10-23T18:40:12.450978+05:30"

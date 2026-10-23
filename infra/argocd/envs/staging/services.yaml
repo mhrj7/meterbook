@@ -1,0 +1,38 @@
+# One Application per service: every deploy/services/<name>/staging.yaml becomes <name>-staging, rendered with the shared
+# meterbook-service chart into namespace meterbook-staging.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: services-staging
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/mhrj7/meterbook.git
+        revision: main
+        files:
+          - path: "deploy/services/*/staging.yaml"
+  template:
+    metadata:
+      name: "{{ .path.basename }}-staging"
+    spec:
+      project: meterbook-apps
+      source:
+        repoURL: https://github.com/mhrj7/meterbook.git
+        targetRevision: main
+        path: infra/helm/meterbook-service
+        helm:
+          releaseName: "{{ .path.basename }}"
+          valueFiles:
+            - "../../../{{ .path.path }}/staging.yaml"
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: meterbook-staging
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

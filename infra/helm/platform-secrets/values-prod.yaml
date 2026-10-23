@@ -1,19 +1,19 @@
-region: us-east-1
+region: eu-north-1
 
 store:
   allowedNamespaces:
-    - meterbook
+    - meterbook-prod
 
 externalSecrets:
   - name: stripe
-    namespace: meterbook
+    namespace: meterbook-prod
     data:
       - secretKey: STRIPE_API_KEY
         remoteKey: meterbook-prod/stripe-api-key
       - secretKey: STRIPE_WEBHOOK_SIGNING_SECRET
         remoteKey: meterbook-prod/stripe-webhook-signing-secret
   - name: identity-oidc
-    namespace: meterbook
+    namespace: meterbook-prod
     data:
       - secretKey: OIDC_CLIENT_SECRET
         remoteKey: meterbook-prod/identity-oidc-client-secret
