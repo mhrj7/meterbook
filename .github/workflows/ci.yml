@@ -21,6 +21,8 @@ env:
   TERRAFORM_VERSION: 1.13.5
   TFLINT_VERSION: v0.65.0
   TRIVY_VERSION: v0.76.1
+  SPECTRAL_IMAGE: stoplight/spectral:6.15.0
+  OASDIFF_IMAGE: tufin/oasdiff:v1.34.0
 
 # Explicit bash runs every step with `-eo pipefail`, so a failing command piped into tee/grep fails the step.
 defaults:
@@ -38,6 +40,7 @@ jobs:
       terraform: ${{ steps.filter.outputs.terraform }}
       helm: ${{ steps.filter.outputs.helm }}
       secrets-e2e: ${{ steps.filter.outputs.secrets-e2e }}
+      contracts: ${{ steps.filter.outputs.contracts }}
       gitops: ${{ steps.filter.outputs.gitops }}
       workflows: ${{ steps.filter.outputs.workflows }}
       services: ${{ steps.services.outputs.list }}
@@ -66,6 +69,9 @@ jobs:
             secrets-e2e:
               - 'infra/helm/platform-secrets/**'
               - 'tests/integration/secrets/**'
+              - '.github/workflows/ci.yml'
+            contracts:
+              - 'contracts/**'
               - '.github/workflows/ci.yml'
             workflows:
               - '.github/workflows/**'
@@ -267,10 +273,44 @@ jobs:
       service: ${{ matrix.service }}
       publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
+  contracts:
+    name: Contracts (lint, breaking changes)
+    needs: changes
+    if: needs.changes.outputs.contracts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Lint (Spectral, api-standards rules)
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo "$SPECTRAL_IMAGE"
+          lint 'contracts/openapi/*.yaml' --ruleset contracts/.spectral.yaml --fail-severity=warn
+      - name: No breaking changes against the base branch
+        # A breaking change needs a new major version: a new file (identity-v2.yaml), which has no base to compare.
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No base commit to compare with"; exit 0
+          fi
+          mkdir -p /tmp/base
+          for f in contracts/openapi/*.yaml; do
+            if git cat-file -e "$BASE:$f" 2>/dev/null; then
+              git show "$BASE:$f" > "/tmp/base/$(basename "$f")"
+              echo "Comparing $f with $BASE"
+              docker run --rm -v "$PWD:/repo" -v /tmp/base:/base -w /repo "$OASDIFF_IMAGE" \
+                breaking "/base/$(basename "$f")" "$f" --fail-on ERR
+            else
+              echo "$f is new"
+            fi
+          done
+
   ci:
     name: ci
     if: always()
-    needs: [changes, secrets, workflow-lint, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
+    needs: [changes, secrets, workflow-lint, contracts, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs passed or were skipped

@@ -1,0 +1,46 @@
+# Contract lint rules (api-standards.md). Run: spectral lint contracts/openapi/*.yaml --ruleset contracts/.spectral.yaml
+extends: ["spectral:oas"]
+rules:
+  # Every operation has a summary; a longer description is added only where it says more.
+  operation-description: off
+  meterbook-snake-case-properties:
+    description: JSON fields are snake_case (SCIM schemas follow RFC 7643 camelCase instead).
+    severity: error
+    given: "$.components.schemas[?(!@property.match(/^Scim/))]..properties"
+    then:
+      field: "@key"
+      function: pattern
+      functionOptions:
+        match: "^[a-z][a-z0-9_]*$"
+  meterbook-post-requires-idempotency-key:
+    description: Every POST outside SCIM accepts Idempotency-Key.
+    severity: error
+    given: "$.paths[?(!@property.match(/^\\/scim\\//))].post"
+    then:
+      field: parameters
+      function: schema
+      functionOptions:
+        schema:
+          type: array
+          contains:
+            type: object
+            properties:
+              name: { const: Idempotency-Key }
+              in: { const: header }
+              required: { const: true }
+            required: [name, in, required]
+  meterbook-request-id-on-2xx:
+    description: Every non-SCIM success response carries Request-Id.
+    severity: error
+    given: "$.paths[?(!@property.match(/^\\/scim\\//))][get,post,put,patch,delete].responses[?(@property.match(/^2/))]"
+    then:
+      field: headers.Request-Id
+      function: truthy
+  meterbook-kebab-case-paths:
+    description: Paths are kebab-case (SCIM resource names are fixed by RFC 7644).
+    severity: error
+    given: "$.paths[?(!@property.match(/^\\/scim\\//))]~"
+    then:
+      function: pattern
+      functionOptions:
+        match: "^(/[a-z0-9-]+|/\\{[a-z_]+\\})+$"

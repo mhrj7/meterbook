@@ -1,0 +1,970 @@
+openapi: 3.1.0
+info:
+  title: Meterbook Identity API
+  version: 1.0.0
+  description: |
+    Tenants, enterprise SSO connections and SCIM 2.0 provisioning (MB-T07, ADR-0007, docs/design/identity.md).
+
+    Authentication: `Authorization: Bearer <access token>` issued by Meterbook's Keycloak realm. The tenant is the
+    single organization named in the token; it is never read from a request body. SCIM endpoints instead take a
+    tenant SCIM token issued by `POST /v1/scim-tokens`.
+  contact:
+    name: Meterbook platform team
+    url: https://github.com/mhrj7/meterbook
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://api.meterbook.example
+security:
+  - accessToken: []
+tags:
+  - name: me
+    description: The authenticated caller.
+  - name: tenants
+    description: Tenants (platform administrators only).
+  - name: sso
+    description: Enterprise SSO connections for the caller's tenant.
+  - name: scim-tokens
+    description: Credentials for the tenant's SCIM client.
+  - name: scim
+    description: SCIM 2.0 service provider (RFC 7643, RFC 7644).
+
+paths:
+  /v1/me:
+    get:
+      tags: [me]
+      operationId: getMe
+      summary: Describe the authenticated caller
+      responses:
+        "200":
+          description: The caller.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/tenants:
+    post:
+      tags: [tenants]
+      operationId: createTenant
+      summary: Create a tenant and its first administrator
+      description: Requires the `platform-admin` role. Each domain can belong to only one tenant.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTenant" }
+      responses:
+        "201":
+          description: Tenant created.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/tenants/{tenant_id}:
+    get:
+      tags: [tenants]
+      operationId: getTenant
+      summary: Get a tenant
+      description: Platform administrators may read any tenant; other callers only their own.
+      parameters:
+        - $ref: "#/components/parameters/TenantId"
+      responses:
+        "200":
+          description: The tenant.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Tenant" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/sso-connections:
+    get:
+      tags: [sso]
+      operationId: listSsoConnections
+      summary: List the tenant's SSO connections
+      description: Requires the `tenant-admin` role.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        "200":
+          description: A page of connections.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SsoConnectionList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [sso]
+      operationId: createSsoConnection
+      summary: Connect the tenant's SAML 2.0 identity provider
+      description: |
+        Requires the `tenant-admin` role. Logins for the tenant's email domains are routed to this IdP. Configure the
+        IdP with the returned `service_provider.entity_id` and `service_provider.acs_url`.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateSsoConnection" }
+      responses:
+        "201":
+          description: Connection created.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SsoConnection" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/sso-connections/{connection_id}:
+    parameters:
+      - name: connection_id
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/Id" }
+    get:
+      tags: [sso]
+      operationId: getSsoConnection
+      summary: Get an SSO connection
+      responses:
+        "200":
+          description: The connection.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SsoConnection" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [sso]
+      operationId: deleteSsoConnection
+      summary: Delete an SSO connection
+      description: Users of the connection can no longer sign in through it. Deleting twice returns 404.
+      responses:
+        "204":
+          description: Deleted.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/scim-tokens:
+    get:
+      tags: [scim-tokens]
+      operationId: listScimTokens
+      summary: List the tenant's SCIM tokens (without secrets)
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        "200":
+          description: A page of tokens.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScimTokenList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [scim-tokens]
+      operationId: createScimToken
+      summary: Issue a SCIM token
+      description: Requires the `tenant-admin` role. The secret is returned once and stored only as a hash.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateScimToken" }
+      responses:
+        "201":
+          description: Token issued.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScimTokenWithSecret" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/scim-tokens/{token_id}:
+    delete:
+      tags: [scim-tokens]
+      operationId: revokeScimToken
+      summary: Revoke a SCIM token
+      description: Requests with the token fail with 401 immediately after this returns.
+      parameters:
+        - name: token_id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/Id" }
+      responses:
+        "204":
+          description: Revoked.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /scim/v2/ServiceProviderConfig:
+    get:
+      tags: [scim]
+      operationId: scimServiceProviderConfig
+      summary: SCIM capabilities
+      security:
+        - scimToken: []
+      responses:
+        "200":
+          description: Capabilities.
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimServiceProviderConfig" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+
+  /scim/v2/ResourceTypes:
+    get:
+      tags: [scim]
+      operationId: scimResourceTypes
+      summary: Supported SCIM resource types
+      security:
+        - scimToken: []
+      responses:
+        "200":
+          description: User and Group.
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimListResponse" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+
+  /scim/v2/Schemas:
+    get:
+      tags: [scim]
+      operationId: scimSchemas
+      summary: Supported SCIM schemas
+      security:
+        - scimToken: []
+      responses:
+        "200":
+          description: Core User and Group schemas.
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimListResponse" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+
+  /scim/v2/Users:
+    get:
+      tags: [scim]
+      operationId: scimListUsers
+      summary: List or filter users
+      description: Supports `filter=userName eq "<value>"` and `filter=externalId eq "<value>"`.
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: "#/components/parameters/ScimFilter"
+        - $ref: "#/components/parameters/ScimStartIndex"
+        - $ref: "#/components/parameters/ScimCount"
+      responses:
+        "200":
+          description: Matching users.
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimListResponse" }
+        "400": { $ref: "#/components/responses/ScimBadRequest" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+    post:
+      tags: [scim]
+      operationId: scimCreateUser
+      summary: Provision a user
+      security:
+        - scimToken: []
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema: { $ref: "#/components/schemas/ScimUser" }
+      responses:
+        "201":
+          description: Provisioned.
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimUser" }
+        "400": { $ref: "#/components/responses/ScimBadRequest" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "409": { $ref: "#/components/responses/ScimConflict" }
+        "503": { $ref: "#/components/responses/ScimUnavailable" }
+
+  /scim/v2/Users/{scim_id}:
+    parameters:
+      - $ref: "#/components/parameters/ScimId"
+    get:
+      tags: [scim]
+      operationId: scimGetUser
+      summary: Get a user
+      security:
+        - scimToken: []
+      responses:
+        "200":
+          description: The user.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimUser" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "404": { $ref: "#/components/responses/ScimNotFound" }
+    put:
+      tags: [scim]
+      operationId: scimReplaceUser
+      summary: Replace a user
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema: { $ref: "#/components/schemas/ScimUser" }
+      responses:
+        "200":
+          description: Replaced.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimUser" }
+        "400": { $ref: "#/components/responses/ScimBadRequest" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "404": { $ref: "#/components/responses/ScimNotFound" }
+        "409": { $ref: "#/components/responses/ScimConflict" }
+        "412": { $ref: "#/components/responses/ScimPreconditionFailed" }
+        "503": { $ref: "#/components/responses/ScimUnavailable" }
+    patch:
+      tags: [scim]
+      operationId: scimPatchUser
+      summary: Modify a user (e.g. deactivate with `active=false`)
+      description: Deactivation disables the user in Keycloak and ends their sessions before the response returns.
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema: { $ref: "#/components/schemas/ScimPatchOp" }
+      responses:
+        "200":
+          description: Modified.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimUser" }
+        "400": { $ref: "#/components/responses/ScimBadRequest" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "404": { $ref: "#/components/responses/ScimNotFound" }
+        "412": { $ref: "#/components/responses/ScimPreconditionFailed" }
+        "503": { $ref: "#/components/responses/ScimUnavailable" }
+    delete:
+      tags: [scim]
+      operationId: scimDeleteUser
+      summary: Deprovision and delete a user
+      security:
+        - scimToken: []
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "404": { $ref: "#/components/responses/ScimNotFound" }
+        "503": { $ref: "#/components/responses/ScimUnavailable" }
+
+  /scim/v2/Groups:
+    get:
+      tags: [scim]
+      operationId: scimListGroups
+      summary: List or filter groups
+      description: Supports `filter=displayName eq "<value>"` and `filter=externalId eq "<value>"`.
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: "#/components/parameters/ScimFilter"
+        - $ref: "#/components/parameters/ScimStartIndex"
+        - $ref: "#/components/parameters/ScimCount"
+      responses:
+        "200":
+          description: Matching groups.
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimListResponse" }
+        "400": { $ref: "#/components/responses/ScimBadRequest" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+    post:
+      tags: [scim]
+      operationId: scimCreateGroup
+      summary: Create a group
+      security:
+        - scimToken: []
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema: { $ref: "#/components/schemas/ScimGroup" }
+      responses:
+        "201":
+          description: Created.
+          headers:
+            Location: { $ref: "#/components/headers/Location" }
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimGroup" }
+        "400": { $ref: "#/components/responses/ScimBadRequest" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "409": { $ref: "#/components/responses/ScimConflict" }
+
+  /scim/v2/Groups/{scim_id}:
+    parameters:
+      - $ref: "#/components/parameters/ScimId"
+    get:
+      tags: [scim]
+      operationId: scimGetGroup
+      summary: Get a group
+      security:
+        - scimToken: []
+      responses:
+        "200":
+          description: The group.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimGroup" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "404": { $ref: "#/components/responses/ScimNotFound" }
+    patch:
+      tags: [scim]
+      operationId: scimPatchGroup
+      summary: Rename a group or add and remove members
+      security:
+        - scimToken: []
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content:
+          application/scim+json:
+            schema: { $ref: "#/components/schemas/ScimPatchOp" }
+      responses:
+        "200":
+          description: Modified.
+          headers:
+            ETag: { $ref: "#/components/headers/ETag" }
+          content:
+            application/scim+json:
+              schema: { $ref: "#/components/schemas/ScimGroup" }
+        "400": { $ref: "#/components/responses/ScimBadRequest" }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "404": { $ref: "#/components/responses/ScimNotFound" }
+        "412": { $ref: "#/components/responses/ScimPreconditionFailed" }
+    delete:
+      tags: [scim]
+      operationId: scimDeleteGroup
+      summary: Delete a group
+      security:
+        - scimToken: []
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/ScimUnauthorized" }
+        "404": { $ref: "#/components/responses/ScimNotFound" }
+
+components:
+  securitySchemes:
+    accessToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access token from the Meterbook Keycloak realm (audience `meterbook-api`).
+    scimToken:
+      type: http
+      scheme: bearer
+      description: Tenant SCIM token (`mbscim_…`) from `POST /v1/scim-tokens`.
+
+  headers:
+    RequestId:
+      description: Unique ID of this request, also in logs and traces.
+      schema: { type: string, examples: [req_01JBZ8K6S9M2Q4T7V0X3Y5A8C1] }
+    Location:
+      description: URL of the created resource.
+      schema: { type: string, format: uri-reference }
+    ETag:
+      description: Resource version (SCIM `meta.version`).
+      schema: { type: string, examples: ['W/"3"'] }
+    RetryAfter:
+      description: Seconds to wait before retrying.
+      schema: { type: integer, minimum: 1 }
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Client-generated key; the same key and body within 24 h return the stored response.
+      schema: { type: string, minLength: 1, maxLength: 255 }
+    TenantId:
+      name: tenant_id
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/Id" }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+    StartingAfter:
+      name: starting_after
+      in: query
+      description: Cursor from `next_cursor` of the previous page.
+      schema: { type: string }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: false
+      description: Apply the change only if the resource still has this version.
+      schema: { type: string }
+    ScimId:
+      name: scim_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ScimFilter:
+      name: filter
+      in: query
+      schema: { type: string, examples: ['userName eq "jane@acme.example"'] }
+    ScimStartIndex:
+      name: startIndex
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    ScimCount:
+      name: count
+      in: query
+      schema: { type: integer, minimum: 0, maximum: 200, default: 100 }
+
+  responses:
+    BadRequest:
+      description: Malformed request.
+      headers:
+        Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing, invalid or expired credentials.
+      headers:
+        Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Authenticated but missing the required role.
+      headers:
+        Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Not found, or belongs to another tenant.
+      headers:
+        Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Conflict:
+      description: A request with this Idempotency-Key is in flight, or the resource already exists.
+      headers:
+        Request-Id: { $ref: "#/components/headers/RequestId" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unprocessable:
+      description: Validation failed, or the Idempotency-Key was reused with a different body.
+      headers:
+        Request-Id: { $ref: "#/components/headers/RequestId" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unavailable:
+      description: A dependency (Keycloak) is unavailable; nothing was changed.
+      headers:
+        Request-Id: { $ref: "#/components/headers/RequestId" }
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    ScimBadRequest:
+      description: Invalid SCIM request (`scimType` says why).
+      content:
+        application/scim+json:
+          schema: { $ref: "#/components/schemas/ScimError" }
+    ScimUnauthorized:
+      description: Missing, unknown or revoked SCIM token.
+      content:
+        application/scim+json:
+          schema: { $ref: "#/components/schemas/ScimError" }
+    ScimNotFound:
+      description: Not found, or belongs to another tenant.
+      content:
+        application/scim+json:
+          schema: { $ref: "#/components/schemas/ScimError" }
+    ScimConflict:
+      description: "`userName` or `displayName` already exists (`scimType: uniqueness`)."
+      content:
+        application/scim+json:
+          schema: { $ref: "#/components/schemas/ScimError" }
+    ScimPreconditionFailed:
+      description: "`If-Match` did not match the current version."
+      content:
+        application/scim+json:
+          schema: { $ref: "#/components/schemas/ScimError" }
+    ScimUnavailable:
+      description: Keycloak is unavailable; nothing was changed. Retry later.
+      headers:
+        Retry-After: { $ref: "#/components/headers/RetryAfter" }
+      content:
+        application/scim+json:
+          schema: { $ref: "#/components/schemas/ScimError" }
+
+  schemas:
+    Id:
+      type: string
+      format: uuid
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [type, code, message, request_id]
+          properties:
+            type:
+              type: string
+              enum: [invalid_request, authentication_error, permission_error, not_found, conflict, rate_limited, unavailable, internal_error]
+            code: { type: string, examples: [domain_already_claimed] }
+            message: { type: string }
+            param: { type: string }
+            request_id: { type: string }
+
+    Me:
+      type: object
+      required: [user_id, tenant_id, email, roles, login_method]
+      properties:
+        user_id: { $ref: "#/components/schemas/Id" }
+        tenant_id: { $ref: "#/components/schemas/Id" }
+        email: { type: string, format: email }
+        name: { type: string }
+        roles:
+          type: array
+          items: { type: string, enum: [platform-admin, tenant-admin] }
+        login_method:
+          type: string
+          description: "`password` for Meterbook credentials, `sso` when signed in through the tenant's IdP."
+          enum: [password, sso]
+        sso_connection_id:
+          description: The connection used, when `login_method` is `sso`.
+          oneOf:
+            - $ref: "#/components/schemas/Id"
+            - type: "null"
+
+    CreateTenant:
+      type: object
+      required: [name, slug, domains, initial_admin_email]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug:
+          type: string
+          pattern: "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+        domains:
+          type: array
+          minItems: 1
+          maxItems: 20
+          uniqueItems: true
+          items: { type: string, format: hostname, maxLength: 253 }
+        initial_admin_email:
+          type: string
+          format: email
+          description: Must be in one of `domains`. Receives the `tenant-admin` role.
+
+    Tenant:
+      type: object
+      required: [id, name, slug, domains, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        slug: { type: string }
+        domains:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+
+    CreateSsoConnection:
+      type: object
+      required: [display_name, protocol, saml]
+      additionalProperties: false
+      properties:
+        display_name: { type: string, minLength: 1, maxLength: 100 }
+        protocol: { type: string, enum: [saml] }
+        saml: { $ref: "#/components/schemas/SamlIdentityProvider" }
+
+    SamlIdentityProvider:
+      type: object
+      required: [entity_id, sso_url, signing_certificate]
+      additionalProperties: false
+      properties:
+        entity_id: { type: string, minLength: 1, maxLength: 1024, description: The IdP's SAML entity ID. }
+        sso_url: { type: string, format: uri, pattern: "^https?://", description: The IdP's SSO endpoint (HTTP-POST or redirect binding). }
+        signing_certificate:
+          type: string
+          minLength: 100
+          maxLength: 16384
+          description: The IdP's X.509 signing certificate, PEM or base64 DER. Assertions must be signed with it.
+
+    SsoConnection:
+      type: object
+      required: [id, display_name, protocol, saml, service_provider, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        display_name: { type: string }
+        protocol: { type: string, enum: [saml] }
+        saml:
+          type: object
+          required: [entity_id, sso_url]
+          properties:
+            entity_id: { type: string }
+            sso_url: { type: string, format: uri }
+        service_provider:
+          type: object
+          description: Values to configure in the tenant's IdP.
+          required: [entity_id, acs_url, metadata_url]
+          properties:
+            entity_id: { type: string }
+            acs_url: { type: string, format: uri }
+            metadata_url: { type: string, format: uri }
+        created_at: { type: string, format: date-time }
+
+    SsoConnectionList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/SsoConnection" }
+        has_more: { type: boolean }
+        next_cursor: { type: [string, "null"] }
+
+    CreateScimToken:
+      type: object
+      required: [description]
+      additionalProperties: false
+      properties:
+        description: { type: string, minLength: 1, maxLength: 200 }
+
+    ScimToken:
+      type: object
+      required: [id, description, prefix, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        description: { type: string }
+        prefix: { type: string, description: First characters of the token, to recognise it. }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time }
+
+    ScimTokenWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/ScimToken"
+        - type: object
+          required: [secret]
+          properties:
+            secret: { type: string, description: Shown once. Use as the SCIM client's bearer token. }
+
+    ScimTokenList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/ScimToken" }
+        has_more: { type: boolean }
+        next_cursor: { type: [string, "null"] }
+
+    ScimMeta:
+      type: object
+      readOnly: true
+      properties:
+        resourceType: { type: string, enum: [User, Group] }
+        created: { type: string, format: date-time }
+        lastModified: { type: string, format: date-time }
+        location: { type: string, format: uri }
+        version: { type: string }
+
+    ScimUser:
+      type: object
+      required: [schemas, userName]
+      properties:
+        schemas:
+          type: array
+          items: { type: string }
+          examples: [["urn:ietf:params:scim:schemas:core:2.0:User"]]
+        id: { type: string, format: uuid, readOnly: true }
+        externalId: { type: string, maxLength: 255 }
+        userName: { type: string, minLength: 1, maxLength: 255, description: The user's email address. }
+        name:
+          type: object
+          properties:
+            givenName: { type: string, maxLength: 100 }
+            familyName: { type: string, maxLength: 100 }
+        displayName: { type: string, maxLength: 200 }
+        active: { type: boolean, default: true }
+        emails:
+          type: array
+          items:
+            type: object
+            properties:
+              value: { type: string, format: email }
+              type: { type: string }
+              primary: { type: boolean }
+        groups:
+          type: array
+          readOnly: true
+          items:
+            type: object
+            properties:
+              value: { type: string }
+              display: { type: string }
+        meta: { $ref: "#/components/schemas/ScimMeta" }
+
+    ScimGroup:
+      type: object
+      required: [schemas, displayName]
+      properties:
+        schemas:
+          type: array
+          items: { type: string }
+          examples: [["urn:ietf:params:scim:schemas:core:2.0:Group"]]
+        id: { type: string, format: uuid, readOnly: true }
+        externalId: { type: string, maxLength: 255 }
+        displayName: { type: string, minLength: 1, maxLength: 200 }
+        members:
+          type: array
+          items:
+            type: object
+            required: [value]
+            properties:
+              value: { type: string, format: uuid, description: SCIM ID of a user of the same tenant. }
+              display: { type: string }
+        meta: { $ref: "#/components/schemas/ScimMeta" }
+
+    ScimPatchOp:
+      type: object
+      required: [schemas, Operations]
+      properties:
+        schemas:
+          type: array
+          items: { type: string, const: "urn:ietf:params:scim:api:messages:2.0:PatchOp" }
+        Operations:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [op]
+            properties:
+              op: { type: string, enum: [add, remove, replace, Add, Remove, Replace] }
+              path: { type: string, examples: [active, 'members[value eq "2819c223-7f76-453a-919d-413861904646"]'] }
+              value: {}
+
+    ScimListResponse:
+      type: object
+      required: [schemas, totalResults, Resources]
+      properties:
+        schemas:
+          type: array
+          items: { type: string, const: "urn:ietf:params:scim:api:messages:2.0:ListResponse" }
+        totalResults: { type: integer, minimum: 0 }
+        startIndex: { type: integer, minimum: 1 }
+        itemsPerPage: { type: integer, minimum: 0 }
+        Resources:
+          type: array
+          items: { type: object }
+
+    ScimServiceProviderConfig:
+      type: object
+      required: [schemas, patch, bulk, filter, changePassword, sort, etag, authenticationSchemes]
+      properties:
+        schemas:
+          type: array
+          items: { type: string }
+        patch: { type: object, properties: { supported: { type: boolean } } }
+        bulk: { type: object, properties: { supported: { type: boolean } } }
+        filter:
+          type: object
+          properties:
+            supported: { type: boolean }
+            maxResults: { type: integer }
+        changePassword: { type: object, properties: { supported: { type: boolean } } }
+        sort: { type: object, properties: { supported: { type: boolean } } }
+        etag: { type: object, properties: { supported: { type: boolean } } }
+        authenticationSchemes:
+          type: array
+          items: { type: object }
+
+    ScimError:
+      type: object
+      required: [schemas, status]
+      properties:
+        schemas:
+          type: array
+          items: { type: string, const: "urn:ietf:params:scim:api:messages:2.0:Error" }
+        status: { type: string, examples: ["409"] }
+        scimType: { type: string, examples: [uniqueness, invalidFilter, invalidValue, invalidSyntax] }
+        detail: { type: string }
