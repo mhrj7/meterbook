@@ -9,6 +9,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 6.0"
     }
+    helm = {
+      source  = "hashicorp/helm"
+      version = "~> 3.3"
+    }
   }
 
   # Partial config: bucket, region, encrypt and use_lockfile come from backend.hcl (see backend.hcl.example).
@@ -25,6 +29,20 @@ provider "aws" {
       Product   = "meterbook"
       ManagedBy = "terraform"
       Repo      = var.github_repository
+    }
+  }
+}
+
+# Kubernetes access for the GitOps bootstrap: short-lived tokens from the CI role, which EKS maps to cluster-admin
+# (cluster creator). Only reachable when the runner can reach the cluster API (see the apply workflow).
+provider "helm" {
+  kubernetes = {
+    host                   = module.stack.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.stack.cluster_certificate_authority_data)
+    exec = {
+      api_version = "client.authentication.k8s.io/v1beta1"
+      command     = "aws"
+      args        = ["eks", "get-token", "--cluster-name", module.stack.cluster_name, "--region", var.region]
     }
   }
 }
@@ -52,4 +70,14 @@ module "stack" {
   db_multi_az              = true
   db_backup_retention_days = 14
   db_performance_insights  = true
+}
+
+# Off until there is an in-VPC path to the private prod API (ADR-0006).
+module "gitops" {
+  source = "../../modules/gitops"
+  count  = var.bootstrap_gitops ? 1 : 0
+
+  environments = ["prod"]
+
+  depends_on = [module.stack]
 }

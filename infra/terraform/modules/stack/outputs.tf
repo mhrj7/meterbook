@@ -13,6 +13,11 @@ output "cluster_endpoint" {
   value       = module.cluster.cluster_endpoint
 }
 
+output "cluster_certificate_authority_data" {
+  description = "Base64 cluster CA certificate (for the Helm/Kubernetes providers)."
+  value       = module.cluster.cluster_certificate_authority_data
+}
+
 output "database" {
   description = "Connection details. Credentials live in Secrets Manager, not here."
   value = {
