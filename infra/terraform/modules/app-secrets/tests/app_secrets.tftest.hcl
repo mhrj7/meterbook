@@ -115,14 +115,27 @@ run "role_is_bound_to_eso_service_account_via_pod_identity" {
   }
 }
 
-run "rejects_force_delete_recovery_window" {
+run "rejects_recovery_window_between_1_and_6" {
+  command = plan
+
+  variables {
+    recovery_window_days = 3
+  }
+
+  expect_failures = [var.recovery_window_days]
+}
+
+run "allows_immediate_deletion_for_disposable_envs" {
   command = plan
 
   variables {
     recovery_window_days = 0
   }
 
-  expect_failures = [var.recovery_window_days]
+  assert {
+    condition     = alltrue([for s in aws_secretsmanager_secret.this : s.recovery_window_in_days == 0])
+    error_message = "A recovery window of 0 must delete secrets immediately on destroy."
+  }
 }
 
 run "rejects_invalid_secret_name" {

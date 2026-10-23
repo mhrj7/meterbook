@@ -76,9 +76,15 @@ variable "endpoint_public_access_cidrs" {
 }
 
 variable "node_instance_types" {
-  description = "Node instance types (arm64)."
+  description = "Node instance types (architecture must match node_ami_type)."
   type        = list(string)
   default     = ["t4g.medium"]
+}
+
+variable "node_ami_type" {
+  description = "EKS AMI type matching the node architecture."
+  type        = string
+  default     = "AL2023_ARM_64_STANDARD"
 }
 
 variable "node_capacity_type" {

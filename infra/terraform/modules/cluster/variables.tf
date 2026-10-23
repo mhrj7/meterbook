@@ -47,9 +47,20 @@ variable "endpoint_public_access_cidrs" {
 }
 
 variable "node_instance_types" {
-  description = "Instance types for the default node group (arm64 / Graviton)."
+  description = "Instance types for the default node group (architecture must match node_ami_type)."
   type        = list(string)
   default     = ["t4g.medium"]
+}
+
+variable "node_ami_type" {
+  description = "EKS AMI type; must match the architecture of node_instance_types (Graviton = ARM_64)."
+  type        = string
+  default     = "AL2023_ARM_64_STANDARD"
+
+  validation {
+    condition     = contains(["AL2023_ARM_64_STANDARD", "AL2023_x86_64_STANDARD"], var.node_ami_type)
+    error_message = "node_ami_type must be AL2023_ARM_64_STANDARD or AL2023_x86_64_STANDARD."
+  }
 }
 
 variable "node_capacity_type" {

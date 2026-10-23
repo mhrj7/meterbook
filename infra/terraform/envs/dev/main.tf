@@ -1,4 +1,4 @@
-# dev: disposable and cheap — 2 AZs, one shared NAT gateway, small on-demand nodes, single-AZ database, public Kubernetes API
+# dev: disposable and cheap — 2 AZs, one shared NAT gateway, free-plan-eligible on-demand nodes, single-AZ database, public Kubernetes API
 # restricted to admin_cidrs. Destroy it when idle (see infra/terraform/README.md).
 
 terraform {
@@ -45,9 +45,10 @@ module "stack" {
   endpoint_public_access       = true
   endpoint_public_access_cidrs = var.admin_cidrs
 
-  # On-demand: new AWS accounts get no Spot capacity (the first real apply failed with UnfulfillableCapacity), and
-  # dev only runs for the length of a verification session.
-  node_instance_types = ["t4g.medium"]
+  # On-demand and Free-plan eligible: new accounts get no Spot capacity, and accounts on the AWS Free plan may only
+  # launch free-tier-eligible types (largest: m7i-flex.large, x86, 2 vCPU / 8 GB). Prod stays on Graviton.
+  node_instance_types = ["m7i-flex.large"]
+  node_ami_type       = "AL2023_x86_64_STANDARD"
   node_capacity_type  = "ON_DEMAND"
   node_min_size       = 1
   node_max_size       = 3

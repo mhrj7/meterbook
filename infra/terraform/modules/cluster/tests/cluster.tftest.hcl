@@ -111,6 +111,16 @@ run "rejects_desired_outside_bounds" {
   expect_failures = [var.node_desired_size]
 }
 
+run "rejects_unknown_ami_type" {
+  command = plan
+
+  variables {
+    node_ami_type = "BOTTLEROCKET_ARM_64"
+  }
+
+  expect_failures = [var.node_ami_type]
+}
+
 run "rejects_malformed_version" {
   command = plan
 
