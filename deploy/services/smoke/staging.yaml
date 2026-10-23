@@ -6,6 +6,8 @@ image:
   tag: "6.15.0"          # human-readable; the digest below is what deploys
   digest: "sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da"
 containerPort: 9898
+# The image has no ENTRYPOINT (only CMD ./podinfo), so args alone would replace the binary: set both.
+command: ["./podinfo"]
 args: ["--port=9898", "--level=info"]
 probes:
   startup:

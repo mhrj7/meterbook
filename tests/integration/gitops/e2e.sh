@@ -32,9 +32,10 @@ on_exit() {
 trap on_exit EXIT
 
 wait_until() { # wait_until <seconds> <description> <command...>
-  local deadline=$((SECONDS + $1)) what=$2; shift 2
+  local timeout=$1 what=$2; shift 2
+  local deadline=$((SECONDS + timeout))
   until "$@" >/dev/null 2>&1; do
-    [ "$SECONDS" -ge "$deadline" ] && die "timed out after $1s waiting for: $what"
+    [ "$SECONDS" -ge "$deadline" ] && die "timed out after ${timeout}s waiting for: $what"
     sleep 5
   done
 }
