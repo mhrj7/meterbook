@@ -83,8 +83,18 @@ Rough figures for planning; confirm with the AWS Pricing Calculator before apply
    terraform plan -out=tfplan
    terraform apply tfplan
    ```
-4. Set the `ci_roles` outputs as GitHub repository variables, and create the protected GitHub environments `dev` and
-   `production` (required reviewers, `main` only).
+4. Connect CI (workflows in `.github/workflows/`, decisions in ADR-0003). Create the GitHub environments `dev` and
+   `production` with required reviewers and a `main`-only branch rule, then set these variables:
+
+   | Variable | Scope | Value |
+   |---|---|---|
+   | `AWS_REGION` | repository | e.g. `us-east-1` |
+   | `TF_STATE_BUCKET` | repository | bootstrap output `state_bucket` |
+   | `TF_PLAN_ROLE_DEV` / `TF_PLAN_ROLE_PROD` | repository | `ci_roles.plan` output of each env |
+   | `TF_APPLY_ROLE` | environment (`dev`, `production`) | `ci_roles.apply` output of that env |
+   | `TF_ADMIN_CIDRS` | repository | JSON list, e.g. `["203.0.113.10/32"]` |
+
+   Until `TF_STATE_BUCKET` is set, the plan and apply workflows skip themselves; the checks in `ci.yml` always run.
 
 ## Checks
 
