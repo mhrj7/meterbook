@@ -45,14 +45,14 @@ app_synced() { [ "$(app_field "$1" .status.sync.status)" = Synced ]; }
 app_healthy() { [ "$(app_field "$1" .status.health.status)" = Healthy ]; }
 deploy_ready() { [ "$(kubectl -n "$1" get deploy "$2" -o 'jsonpath={.status.availableReplicas}')" = "$3" ]; }
 
-ARGOCD_VALUES=(--set dex.enabled=false --set notifications.enabled=false
-  --set 'configs.params.server\.insecure=true' --set 'configs.cm.timeout\.reconciliation=20s')
+# The clusters' own ArgoCD values, with a shorter reconciliation interval so the test runs quickly.
+ARGOCD_VALUES=(-f "$ROOT/infra/argocd/install/argocd-values.yaml" --set 'configs.cm.timeout\.reconciliation=20s')
 
 step "Install ArgoCD $ARGOCD_CHART_VERSION"
 helm repo add argo https://argoproj.github.io/argo-helm --force-update >/dev/null
 if [ -n "${KIND_CLUSTER:-}" ]; then
-  # Public registries throttle anonymous pulls from shared CI addresses; pull on the host with retries and load the
-  # images into kind so the install does not depend on the cluster winning that race. Only the host's platform is
+  # Registries throttle anonymous pulls from shared CI addresses; pull on the host with retries and load the images
+  # into kind so the install does not depend on the cluster winning that race. Only the host's platform is
   # exported: `kind load docker-image` imports all platforms and fails on Docker's containerd image store.
   platform="linux/$(docker version --format '{{.Server.Arch}}')"
   archive=$(mktemp)

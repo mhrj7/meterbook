@@ -16,27 +16,9 @@ locals {
     }
   }
 
-  argocd_values = {
-    configs = {
-      params = {
-        # TLS terminates at kubectl port-forward / a future ingress; the server is never exposed publicly.
-        "server.insecure" = true
-      }
-      cm = {
-        "timeout.reconciliation" = var.reconciliation_timeout
-      }
-    }
-    dex           = { enabled = false }
-    notifications = { enabled = false }
-    server = {
-      service = { type = "ClusterIP" }
-    }
-    controller = {
-      resources = { requests = { cpu = "100m", memory = "256Mi" }, limits = { memory = "1Gi" } }
-    }
-    repoServer = {
-      resources = { requests = { cpu = "50m", memory = "128Mi" }, limits = { memory = "512Mi" } }
-    }
+  argocd_values_file = "${local.argocd_dir}/install/argocd-values.yaml"
+  argocd_overrides = {
+    configs = { cm = { "timeout.reconciliation" = var.reconciliation_timeout } }
   }
 }
 
@@ -49,7 +31,7 @@ resource "helm_release" "argocd" {
   create_namespace = true
   wait             = true
   timeout          = 900
-  values           = [yamlencode(local.argocd_values)]
+  values           = [file(local.argocd_values_file), yamlencode(local.argocd_overrides)]
 }
 
 resource "helm_release" "roots" {

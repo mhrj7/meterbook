@@ -6,6 +6,7 @@ on:
   pull_request:
     paths:
       - 'infra/terraform/**'
+      - 'infra/argocd/**' # the gitops module installs these files
 
 permissions:
   contents: read

@@ -6,6 +6,7 @@ Everything that runs in Meterbook's clusters is declared here and synced by Argo
 ## Layout
 
 ```
+install/argocd-values.yaml  ArgoCD chart values — used by Terraform and by the end-to-end test
 bootstrap/project.yaml   project for the roots only (ArgoCD objects in the argocd namespace) — created by Terraform
 roots/<env>.yaml         one root Application per environment, tracking main — created by Terraform
 projects/                platform (cluster components) and meterbook-apps (services, least privilege)

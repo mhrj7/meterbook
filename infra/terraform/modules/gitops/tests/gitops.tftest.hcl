@@ -65,6 +65,16 @@ run "argocd_chart_pinned_and_hardened" {
     condition     = yamldecode(helm_release.argocd.values[0]).dex.enabled == false
     error_message = "Unused components (dex) must be disabled."
   }
+
+  assert {
+    condition     = startswith(yamldecode(helm_release.argocd.values[0]).redis.image.repository, "mirror.gcr.io/") && strcontains(yamldecode(helm_release.argocd.values[0]).redis.image.tag, "@sha256:")
+    error_message = "Redis must come from the unthrottled mirror, pinned by digest."
+  }
+
+  assert {
+    condition     = yamldecode(helm_release.argocd.values[1]).configs.cm["timeout.reconciliation"] == "60s"
+    error_message = "The reconciliation interval is layered on top of the shared values."
+  }
 }
 
 run "prod_cluster_runs_only_prod" {
