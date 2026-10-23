@@ -73,7 +73,8 @@ Decisions in [ADR-0005](../../docs/adr/0005-account-level-ci-roles-and-ephemeral
 from a laptop; every apply runs in GitHub Actions through OIDC roles.
 
 1. **Seed CI access:** in AWS CloudShell, as an administrator, run
-   `bash scripts/cloudshell-bootstrap.sh <owner>/meterbook`. It creates the GitHub OIDC provider and the
+   `bash scripts/cloudshell-bootstrap.sh <owner>@<owner-id>/meterbook@<repo-id>` (GitHub's immutable OIDC subject;
+   `gh api repos/<owner>/meterbook/actions/oidc/customization/sub` prints it). It creates the GitHub OIDC provider and the
    `meterbook-terraform-apply` role, trusted only by this repository's `dev` and `production` GitHub environments.
 2. **Repository settings:** GitHub environments `dev` and `production`, each limited to the `main` branch, and these
    repository variables:

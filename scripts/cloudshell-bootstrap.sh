@@ -2,10 +2,12 @@
 # One-time, per AWS account: run in AWS CloudShell as an administrator.
 # Creates the GitHub OIDC provider and the CI apply role so GitHub Actions can run the bootstrap workflow;
 # that workflow then adopts both into Terraform (infra/terraform/bootstrap, import blocks). Safe to re-run.
-#   bash cloudshell-bootstrap.sh <github-owner>/<repo>
+#   bash cloudshell-bootstrap.sh <owner>@<owner-id>/<repo>@<repo-id>
+# The argument is the repository part of GitHub's immutable OIDC subject; find it with:
+#   gh api repos/<owner>/<repo>/actions/oidc/customization/sub   (sub_claim_prefix without the "repo:")
 set -euo pipefail
 
-REPO="${1:?usage: cloudshell-bootstrap.sh <github-owner>/<repo>}"
+REPO="${1:?usage: cloudshell-bootstrap.sh <owner>@<owner-id>/<repo>@<repo-id>}"
 ROLE="meterbook-terraform-apply"
 ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 PROVIDER_ARN="arn:aws:iam::${ACCOUNT}:oidc-provider/token.actions.githubusercontent.com"
