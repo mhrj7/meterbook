@@ -52,7 +52,10 @@ step "Install ArgoCD $ARGOCD_CHART_VERSION"
 helm repo add argo https://argoproj.github.io/argo-helm --force-update >/dev/null
 if [ -n "${KIND_CLUSTER:-}" ]; then
   # Public registries throttle anonymous pulls from shared CI addresses; pull on the host with retries and load the
-  # images into kind so the install does not depend on the cluster winning that race.
+  # images into kind so the install does not depend on the cluster winning that race. Only the host's platform is
+  # exported: `kind load docker-image` imports all platforms and fails on Docker's containerd image store.
+  platform="linux/$(docker version --format '{{.Server.Arch}}')"
+  archive=$(mktemp)
   for image in $(helm template argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" "${ARGOCD_VALUES[@]}" \
       | awk '$1 == "image:" || $1 == "-" && $2 == "image:" {print $NF}' | tr -d '"' | sort -u); do
     for attempt in 1 2 3 4 5; do
@@ -60,8 +63,10 @@ if [ -n "${KIND_CLUSTER:-}" ]; then
       [ "$attempt" -eq 5 ] && die "could not pull $image"
       sleep $((attempt * 10))
     done
-    kind load docker-image "$image" --name "$KIND_CLUSTER" >/dev/null
+    docker save --platform "$platform" "$image" -o "$archive"
+    kind load image-archive "$archive" --name "$KIND_CLUSTER" >/dev/null
   done
+  rm -f "$archive"
   ok "ArgoCD images preloaded into kind"
 fi
 helm upgrade --install argocd argo/argo-cd --version "$ARGOCD_CHART_VERSION" --namespace argocd --create-namespace \
