@@ -4,12 +4,19 @@
 ROOTS   := bootstrap envs/dev envs/prod
 MODULES := $(wildcard modules/*)
 
-.PHONY: check fmt fmt-fix validate test lint scan
+.PHONY: check fmt fmt-fix validate test lint scan no-secret-values
 
-check: fmt validate test lint scan
+check: fmt no-secret-values validate test lint scan
 
 fmt:
 	terraform fmt -check -recursive -diff
+
+# Secret values are set out-of-band (ADR-0004); they must never pass through Terraform state.
+no-secret-values:
+	@if grep -rnE 'resource +"aws_(secretsmanager_secret_version|ssm_parameter)"' --include='*.tf' .; then \
+		echo "Secret values must not be managed by Terraform (ADR-0004)."; exit 1; \
+	fi
+	@echo "no secret values in Terraform"
 
 fmt-fix:
 	terraform fmt -recursive

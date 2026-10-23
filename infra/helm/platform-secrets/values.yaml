@@ -1,0 +1,19 @@
+# AWS region of Secrets Manager.
+region: ""
+
+store:
+  name: aws-secrets-manager
+  # Namespaces allowed to use the store. ExternalSecrets in any other namespace are refused by ESO.
+  allowedNamespaces: []
+
+# How often ESO re-reads each secret; a rotated value reaches pods within this interval.
+refreshInterval: 1h
+
+# Each entry becomes a Kubernetes Secret called `name` in `namespace`.
+externalSecrets: []
+#  - name: stripe
+#    namespace: meterbook
+#    data:
+#      - secretKey: STRIPE_API_KEY            # key in the Kubernetes Secret
+#        remoteKey: meterbook-dev/stripe-api-key  # Secrets Manager name or ARN
+#        property: ""                         # optional: field inside a JSON secret

@@ -17,3 +17,8 @@ output "ci_roles" {
   description = "Set these as GitHub repository variables for the CI workflow."
   value       = module.stack.ci_roles
 }
+
+output "app_secrets" {
+  description = "Secret names for ExternalSecrets and the ESO role (values are set out-of-band)."
+  value       = module.stack.app_secrets
+}

@@ -15,6 +15,7 @@ modules/cluster/    EKS, Graviton managed nodes, KMS-encrypted secrets, audit lo
 modules/postgres/   RDS PostgreSQL: private, encrypted, TLS-only, RDS-managed password
 modules/bucket/     S3: private, versioned, encrypted, TLS 1.2+ only
 modules/github-oidc/ GitHub Actions -> AWS roles without static keys (plan: read-only, apply: protected envs)
+modules/app-secrets/ app secret shells, KMS key, and the External Secrets Operator Pod Identity role (ADR-0004)
 ```
 
 ## What each environment gets
@@ -99,7 +100,7 @@ Rough figures for planning; confirm with the AWS Pricing Calculator before apply
 ## Checks
 
 ```bash
-make check   # fmt, validate (all roots and modules), unit tests, tflint, trivy
+make check   # fmt, no secret values, validate (all roots and modules), unit tests, tflint, trivy
 ```
 
 Unit tests use `terraform test` with mocked providers, so they run offline with no AWS account. They cover every

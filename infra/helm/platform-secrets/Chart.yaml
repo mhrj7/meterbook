@@ -1,0 +1,7 @@
+apiVersion: v2
+name: platform-secrets
+description: ClusterSecretStore and ExternalSecrets that deliver Meterbook secrets from AWS Secrets Manager (ADR-0004).
+type: application
+version: 0.1.0
+# Requires External Secrets Operator >= 0.17 (external-secrets.io/v1 API); tested with chart 2.13.0.
+appVersion: "2.13.0"
