@@ -13,3 +13,9 @@ variable "github_repository" {
   description = "owner/name of the GitHub repository whose workflows may assume the CI roles."
   type        = string
 }
+
+variable "github_subject_repository" {
+  description = "Repository part of GitHub's immutable OIDC sub claim (owner@<owner-id>/name@<repo-id>); set by the bootstrap workflow."
+  type        = string
+  default     = null
+}

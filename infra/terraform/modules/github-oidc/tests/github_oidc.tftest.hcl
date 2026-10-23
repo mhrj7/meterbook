@@ -90,6 +90,40 @@ run "reuses_existing_provider_when_not_creating" {
   }
 }
 
+run "uses_immutable_subjects_when_given" {
+  command = apply
+
+  variables {
+    github_subject_repository = "acme@1001/meterbook@2002"
+  }
+
+  assert {
+    condition = (
+      jsondecode(output.apply_trust_policy).Statement[0].Condition.StringLike["token.actions.githubusercontent.com:sub"]
+      == ["repo:acme@1001/meterbook@2002:environment:dev"]
+    )
+    error_message = "Apply role must trust the immutable subject format."
+  }
+
+  assert {
+    condition = (
+      jsondecode(output.plan_trust_policy).Statement[0].Condition.StringLike["token.actions.githubusercontent.com:sub"]
+      == ["repo:acme@1001/meterbook@2002:pull_request", "repo:acme@1001/meterbook@2002:ref:refs/heads/main"]
+    )
+    error_message = "Plan role must trust the immutable subject format."
+  }
+}
+
+run "rejects_malformed_immutable_subject" {
+  command = plan
+
+  variables {
+    github_subject_repository = "acme/meterbook"
+  }
+
+  expect_failures = [var.github_subject_repository]
+}
+
 run "rejects_wildcard_repository" {
   command = plan
 

@@ -50,12 +50,13 @@ module "state_bucket" {
 module "github_oidc" {
   source = "../modules/github-oidc"
 
-  github_repository  = var.github_repository
-  create_provider    = true
-  apply_environments = ["dev", "production"]
-  state_bucket_arn   = module.state_bucket.arn
-  plan_role_name     = "meterbook-terraform-plan"
-  apply_role_name    = "meterbook-terraform-apply"
+  github_repository         = var.github_repository
+  github_subject_repository = var.github_subject_repository
+  create_provider           = true
+  apply_environments        = ["dev", "production"]
+  state_bucket_arn          = module.state_bucket.arn
+  plan_role_name            = "meterbook-terraform-plan"
+  apply_role_name           = "meterbook-terraform-apply"
 }
 
 import {

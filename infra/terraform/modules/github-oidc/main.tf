@@ -7,11 +7,15 @@ locals {
   issuer_host  = "token.actions.githubusercontent.com"
   provider_arn = var.create_provider ? aws_iam_openid_connect_provider.github[0].arn : var.existing_provider_arn
 
+  # GitHub's immutable subject format embeds owner and repository IDs (repo:owner@id/name@id:...), so a renamed or
+  # re-created repository with the same name cannot assume these roles.
+  subject_repo = var.github_subject_repository != null ? var.github_subject_repository : var.github_repository
+
   plan_subjects = [
-    "repo:${var.github_repository}:pull_request",
-    "repo:${var.github_repository}:ref:refs/heads/main",
+    "repo:${local.subject_repo}:pull_request",
+    "repo:${local.subject_repo}:ref:refs/heads/main",
   ]
-  apply_subjects = [for env in var.apply_environments : "repo:${var.github_repository}:environment:${env}"]
+  apply_subjects = [for env in var.apply_environments : "repo:${local.subject_repo}:environment:${env}"]
 
   trust_policies = {
     for role, subjects in { plan = local.plan_subjects, apply = local.apply_subjects } : role => jsonencode({

@@ -8,6 +8,17 @@ variable "github_repository" {
   }
 }
 
+variable "github_subject_repository" {
+  description = "Repository part of the OIDC sub claim when GitHub issues immutable subjects, e.g. owner@123/name@456. Null uses github_repository."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.github_subject_repository == null || can(regex("^[A-Za-z0-9_.-]+@[0-9]+/[A-Za-z0-9_.-]+@[0-9]+$", var.github_subject_repository))
+    error_message = "github_subject_repository must look like owner@<owner-id>/name@<repo-id>."
+  }
+}
+
 variable "create_provider" {
   description = "Create the GitHub OIDC identity provider. It is account-wide, so only one environment per account should create it."
   type        = bool
