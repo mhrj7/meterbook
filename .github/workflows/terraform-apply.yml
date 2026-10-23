@@ -28,7 +28,7 @@ defaults:
 env:
   TF_IN_AUTOMATION: "true"
   TF_VAR_github_repository: ${{ github.repository }}
-  TF_VAR_admin_cidrs: ${{ vars.TF_ADMIN_CIDRS }}
+  TF_VAR_admin_cidrs: ${{ secrets.TF_ADMIN_CIDRS }}
   ENV_DIR: infra/terraform/envs/${{ inputs.environment == 'production' && 'prod' || 'dev' }}
 
 jobs:
