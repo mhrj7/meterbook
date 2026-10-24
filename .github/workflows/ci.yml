@@ -23,6 +23,10 @@ env:
   TRIVY_VERSION: v0.76.1
   SPECTRAL_IMAGE: stoplight/spectral:6.15.0
   OASDIFF_IMAGE: tufin/oasdiff:v1.34.0
+  # Lint and SAST tools, as official images pinned by digest (Docker Hub ones through Google's mirror).
+  RUFF_IMAGE: ghcr.io/astral-sh/ruff:0.17.0@sha256:0f9316141d252f8c4de3fb672e8433c1afbf9adb24b877ae887cffa4012d850c
+  SHELLCHECK_IMAGE: mirror.gcr.io/koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+  SEMGREP_IMAGE: mirror.gcr.io/semgrep/semgrep:1.180.0@sha256:529ee8a277ec8adc5b534d7c74eea0a47e9de21d62852b6ba7ac6ba9566845c3
 
 # Explicit bash runs every step with `-eo pipefail`, so a failing command piped into tee/grep fails the step.
 defaults:
@@ -130,6 +134,24 @@ jobs:
         run: |
           python3 -m pip install --quiet pyyaml==6.0.3
           python3 scripts/check_workflow_shells.py
+
+  static-analysis:
+    name: Lint and SAST (ruff, ShellCheck, Semgrep)
+    # Cheap and cross-cutting, so it runs on every change (TC-PLT-005, TC-PLT-013). CodeQL runs in codeql.yml.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: ruff (Python)
+        run: docker run --rm -v "$PWD:/repo" -w /repo "$RUFF_IMAGE" check scripts tests --output-format github
+      - name: ShellCheck (every tracked shell script)
+        run: git ls-files -z '*.sh' | xargs -0 docker run --rm -v "$PWD:/repo" -w /repo "$SHELLCHECK_IMAGE" -f gcc
+      - name: Semgrep (registry default rules; errors and warnings fail)
+        # Helm templates are Go templates, not YAML; the rendered charts are checked by kube-linter instead.
+        run: >-
+          docker run --rm -v "$PWD:/src" -w /src "$SEMGREP_IMAGE"
+          semgrep scan --config p/default --metrics off --error --severity ERROR --severity WARNING
+          --exclude 'infra/helm/*/templates' --exclude infra/keycloak
 
   terraform:
     name: Terraform
@@ -448,7 +470,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [changes, secrets, workflow-lint, contracts, java, sso-e2e, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
+    needs: [changes, secrets, workflow-lint, static-analysis, contracts, java, sso-e2e, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs passed or were skipped

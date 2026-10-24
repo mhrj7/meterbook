@@ -328,8 +328,8 @@ secret_env() { # secret_env <var> <secret> <key>
 # The API: an operator token from Keycloak, then tenants through the identity service. The scripts below run in the
 # pod, so their variables expand there (single quotes are intended).
 SLUG="verify-$(date +%s)"
-# shellcheck disable=SC2016
 LOGIN_PY=$(jq -Rs . <"$(dirname "$0")/oidc_login.py")
+# shellcheck disable=SC2016
 api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycloak-clients MB_OPERATOR_CLIENT_SECRET),$(secret_env IDENTITY_SECRET keycloak-clients MB_IDENTITY_CLIENT_SECRET),{\"name\":\"SLUG\",\"value\":\"$SLUG\"},{\"name\":\"LOGIN_PY\",\"value\":$LOGIN_PY}]" '
   set -u
   kc=http://keycloak.meterbook-dev.svc.cluster.local
