@@ -29,7 +29,7 @@ keycloak:
 
 identity:
   image:
-    digest: "sha256:bac5cde7aca3e7f58a907100aff3b9502cbcad79f942dcdc41c418becca1d092"
+    digest: "sha256:050d9106464a9841098ed35089228895e8d5d3bafc2dabbaca21bf77e98cf361"
   env:
     - {name: KEYCLOAK_URL, value: "http://keycloak.meterbook-staging.svc.cluster.local"}
     - {name: KEYCLOAK_ISSUER, value: "http://keycloak.meterbook-staging.svc.cluster.local/realms/meterbook"}
