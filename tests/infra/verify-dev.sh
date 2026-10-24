@@ -196,7 +196,7 @@ spec:
           drop: ["ALL"]
 YAML
 reader_done() { [ "$(kubectl -n meterbook-dev get pod secret-reader -o 'jsonpath={.status.phase}')" = Succeeded ]; }
-if wait_until 180 reader_done && kubectl -n meterbook-dev logs secret-reader | grep -qx "key=$RUN_ID-stripe-api-key"; then
+if wait_until 180 reader_done && kubectl -n meterbook-dev logs secret-reader | grep -cx "key=$RUN_ID-stripe-api-key" >/dev/null; then
   ok "a pod reads the AWS-managed secret at runtime"
 else
   bad "a pod reads the AWS-managed secret at runtime"
@@ -250,7 +250,7 @@ CLIENT_IP=$(kubectl -n meterbook-dev get pod plaintext-client -o 'jsonpath={.sta
 ztunnel_refused() { # the mesh, not some other failure, refused the plaintext client: ztunnel names the strict policy
   [ -n "$CLIENT_IP" ] && kubectl -n istio-system logs -l app=ztunnel --all-containers --since=15m --tail=-1 2>/dev/null \
     | grep -F "src.addr=$CLIENT_IP:" \
-    | grep -qF 'policy rejection: explicitly denied by: istio-system/istio_converted_static_strict'
+    | grep -cF 'policy rejection: explicitly denied by: istio-system/istio_converted_static_strict' >/dev/null
 }
 if kubectl -n meterbook-dev exec plaintext-client -- \
      wget -q -T 5 -O- http://smoke.meterbook-dev.svc.cluster.local/healthz >/dev/null 2>&1; then
@@ -262,14 +262,24 @@ else
 fi
 kubectl -n meterbook-dev delete pod plaintext-client --wait=false >/dev/null 2>&1 || true
 if probe meterbook-dev mesh-client >/dev/null 2>&1; then ok "mesh: an in-mesh client reaches smoke"; else bad "mesh: an in-mesh client reaches smoke"; fi
-ztunnel_mtls() { # ztunnel_mtls <destination workload> <source ns/sa/name>: ztunnel counted an mTLS connection between them
-  # Counters include connections still open (pooled clients log nothing until they close).
-  local z
+ztunnel_metrics() { # every ztunnel's Prometheus metrics; port-forward goes through the kubelet port, which EKS allows
+  local z port pid
+  port=15920
   for z in $(kubectl -n istio-system get pods -l app=ztunnel -o 'jsonpath={.items[*].metadata.name}'); do
-    kubectl get --raw "/api/v1/namespaces/istio-system/pods/$z:15020/proxy/metrics" 2>/dev/null
-  done | grep '^istio_tcp_connections_opened_total{' | grep -F 'reporter="destination"' \
+    port=$((port + 1))
+    kubectl -n istio-system port-forward "pod/$z" "$port:15020" >/dev/null 2>&1 &
+    pid=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf "http://127.0.0.1:$port/metrics" 2>/dev/null && break; sleep 1; done
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  done
+}
+ztunnel_mtls() { # ztunnel_mtls <destination workload> <source ns/sa/name>: ztunnel counted an mTLS connection between them
+  # Counters include connections still open (pooled clients log nothing until they close). The last grep counts
+  # instead of -q: under pipefail, an early exit would kill the producer with SIGPIPE and fail a real match.
+  ztunnel_metrics | grep '^istio_tcp_connections_opened_total{' | grep -F 'reporter="destination"' \
     | grep -F "destination_workload=\"$1\"" | grep -F "source_principal=\"spiffe://cluster.local/ns/$2\"" \
-    | grep -qF 'connection_security_policy="mutual_tls"'
+    | grep -cF 'connection_security_policy="mutual_tls"' >/dev/null
 }
 if wait_until 60 ztunnel_mtls smoke meterbook-dev/sa/default; then
   ok "mesh: ztunnel counts the request as mTLS from the client's SPIFFE identity"
@@ -300,7 +310,7 @@ for env in dev staging; do
     # or sessions and caches would split between them.
     keycloak_clustered() {
       kubectl -n "$ns" logs -l app.kubernetes.io/name=keycloak --tail=-1 2>/dev/null \
-        | grep -F 'ISPN000094' | grep -qE 'cluster view for channel ISPN: \[[^]]*\] \(2\)'
+        | grep -F 'ISPN000094' | grep -cE 'cluster view for channel ISPN: \[[^]]*\] \(2\)' >/dev/null
     }
     if wait_until 300 keycloak_clustered; then ok "Keycloak's two replicas form one cluster in $ns"; else bad "Keycloak's two replicas form one cluster in $ns"; fi
     check "Keycloak replicas run on different nodes in $ns" eq \

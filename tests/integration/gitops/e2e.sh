@@ -145,14 +145,24 @@ kubectl -n "meterbook-$FIRST" delete pod plaintext-client --wait=false >/dev/nul
 ok "plaintext request from a pod outside the mesh rejected by strict mTLS, although the NetworkPolicy admits it"
 probe "meterbook-$FIRST" mesh-client >/dev/null || die "an in-mesh client could not reach smoke"
 ok "in-mesh request to smoke succeeds"
-ztunnel_mtls() { # ztunnel_mtls <destination workload> <source ns/sa/name>: ztunnel counted an mTLS connection between them
-  # Counters include connections still open (pooled clients log nothing until they close).
-  local z
+ztunnel_metrics() { # every ztunnel's Prometheus metrics; port-forward goes through the kubelet port, which EKS allows
+  local z port pid
+  port=15920
   for z in $(kubectl -n istio-system get pods -l app=ztunnel -o 'jsonpath={.items[*].metadata.name}'); do
-    kubectl get --raw "/api/v1/namespaces/istio-system/pods/$z:15020/proxy/metrics" 2>/dev/null
-  done | grep '^istio_tcp_connections_opened_total{' | grep -F 'reporter="destination"' \
+    port=$((port + 1))
+    kubectl -n istio-system port-forward "pod/$z" "$port:15020" >/dev/null 2>&1 &
+    pid=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf "http://127.0.0.1:$port/metrics" 2>/dev/null && break; sleep 1; done
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  done
+}
+ztunnel_mtls() { # ztunnel_mtls <destination workload> <source ns/sa/name>: ztunnel counted an mTLS connection between them
+  # Counters include connections still open (pooled clients log nothing until they close). The last grep counts
+  # instead of -q: under pipefail, an early exit would kill the producer with SIGPIPE and fail a real match.
+  ztunnel_metrics | grep '^istio_tcp_connections_opened_total{' | grep -F 'reporter="destination"' \
     | grep -F "destination_workload=\"$1\"" | grep -F "source_principal=\"spiffe://cluster.local/ns/$2\"" \
-    | grep -qF 'connection_security_policy="mutual_tls"'
+    | grep -cF 'connection_security_policy="mutual_tls"' >/dev/null
 }
 wait_until 60 "ztunnel to count the request as mTLS from the client's SPIFFE identity" \
   ztunnel_mtls smoke "meterbook-$FIRST/sa/default"
