@@ -137,7 +137,7 @@ deploy_ready() { [ "$(kubectl -n "$1" get deploy "$2" -o 'jsonpath={.status.avai
 
 check "ArgoCD server and controllers running" kubectl -n argocd rollout status deploy/argocd-server --timeout=300s
 
-MESH_APPS="platform-istio-base platform-istiod platform-istio-cni platform-ztunnel platform-mesh"
+MESH_APPS="platform-istio-base platform-istiod platform-istio-cni platform-ztunnel platform-policy-controller platform-policy"
 for app in meterbook-dev-root meterbook-staging-root $MESH_APPS platform-external-secrets platform-secrets-dev platform-secrets-staging smoke-dev smoke-staging; do
   if wait_until 900 app_synced "$app"; then ok "ArgoCD application $app Synced"; else bad "ArgoCD application $app Synced ($(app_field "$app" .status.sync.status))"; fi
 done
@@ -170,7 +170,12 @@ for app in platform-secrets-dev platform-secrets-staging; do
   if wait_until 300 app_healthy "$app"; then ok "ArgoCD application $app Healthy"; else bad "ArgoCD application $app Healthy ($(app_field "$app" .status.health.status))"; fi
 done
 
-kubectl -n meterbook-dev apply -f - >/dev/null <<'YAML'
+# Test pods use our own signed tools image: application namespaces admit only signed images (ADR-0012).
+TOOLS_DIGEST=$(awk '/^dbBootstrap:/{f=1} f && /digest:/ {gsub(/"/, "", $2); print $2; exit}' \
+  "$(dirname "$0")/../../infra/helm/identity-stack/values-dev.yaml")
+TOOLS_IMAGE="ghcr.io/mhrj7/meterbook-db-bootstrap@$TOOLS_DIGEST"
+# The heredoc stays quoted (the pod expands ${STRIPE_API_KEY} itself); only the image is filled in here.
+sed "s#\$TOOLS_IMAGE#$TOOLS_IMAGE#" <<'YAML' | kubectl -n meterbook-dev apply -f - >/dev/null
 apiVersion: v1
 kind: Pod
 metadata:
@@ -184,7 +189,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: reader
-      image: busybox:1.37
+      image: $TOOLS_IMAGE
       command: ["sh", "-c", "echo \"key=${STRIPE_API_KEY}\""]
       envFrom:
         - secretRef:
@@ -210,7 +215,8 @@ check "smoke pods run as non-root with a read-only root filesystem" bash -c "
     | grep -v '^true true$' | grep -q . && exit 1 || exit 0"
 
 probe() { # probe <namespace> <pod-name> [labels]: HTTP GET to the dev smoke service from a pod in <namespace>
-  kubectl -n "$1" run "$2" --image=busybox:1.37 --restart=Never --rm -i --quiet --labels="${3:-app=probe}" \
+  # --command: the tools image's entrypoint is the db-bootstrap script.
+  kubectl -n "$1" run "$2" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --command --labels="${3:-app=probe}" \
     --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
     -- wget -q -T 5 -O- http://smoke.meterbook-dev.svc.cluster.local/healthz
 }
@@ -243,7 +249,7 @@ check "mesh-wide PeerAuthentication is STRICT" eq \
 # Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext.
 # The client runs first and calls once Ready, so ztunnel already knows it; its rejection is found by its address.
 kubectl -n meterbook-dev delete pod plaintext-client --ignore-not-found --wait=true >/dev/null 2>&1 || true
-kubectl -n meterbook-dev run plaintext-client --image=busybox:1.37 --restart=Never \
+kubectl -n meterbook-dev run plaintext-client --image="$TOOLS_IMAGE" --restart=Never --command \
   --labels=istio.io/dataplane-mode=none --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' -- sleep 600 >/dev/null 2>&1 || true
 kubectl -n meterbook-dev wait --for=condition=Ready pod/plaintext-client --timeout=120s >/dev/null 2>&1 || true
 CLIENT_IP=$(kubectl -n meterbook-dev get pod plaintext-client -o 'jsonpath={.status.podIP}' 2>/dev/null)
@@ -287,13 +293,28 @@ else
   bad "mesh: ztunnel counts the request as mTLS from the client's SPIFFE identity"
 fi
 
+# --- Image admission (ADR-0012) ----------------------------------------------------------------------------------
+# Only images signed by a known workflow run in application namespaces. Our own (identity, Keycloak, db-bootstrap,
+# the tools image) are admitted, as the checks above and below show; an unsigned one is refused.
+for ns in meterbook-dev meterbook-staging; do
+  check "$ns enrolled in image admission" eq \
+    "$(kubectl get namespace "$ns" -o 'jsonpath={.metadata.labels.policy\.sigstore\.dev/include}')" true
+done
+denied=$(kubectl -n meterbook-dev run unsigned --image=busybox:1.37 --restart=Never -- true 2>&1 || true)
+kubectl -n meterbook-dev delete pod unsigned --ignore-not-found --wait=false >/dev/null 2>&1 || true
+check "an unsigned image is refused at admission in meterbook-dev (no matching policy)" \
+  bash -c "grep -q 'no matching policies' <<<\"\$1\"" _ "$denied"
+if kubectl -n np-outsider run unsigned-outside --image=busybox:1.37 --restart=Never -- true >/dev/null 2>&1; then
+  ok "namespaces outside the policy are not affected"
+else
+  bad "namespaces outside the policy are not affected"
+fi
+kubectl -n np-outsider delete pod unsigned-outside --ignore-not-found --wait=false >/dev/null 2>&1 || true
+
 # --- Identity on EKS (MB-T07) ------------------------------------------------------------------------------------
 # Keycloak and identity per environment, deployed by ArgoCD: generated secrets, the db-bootstrap Job, the workloads.
 # The API is exercised from inside the cluster (no public ingress yet), with the same image the bootstrap uses.
 # The tools image is the db-bootstrap image pinned for dev (psql, aws, curl, jq), so it exists even if the Job does not.
-TOOLS_DIGEST=$(awk '/^dbBootstrap:/{f=1} f && /digest:/ {gsub(/"/, "", $2); print $2; exit}' \
-  "$(dirname "$0")/../../infra/helm/identity-stack/values-dev.yaml")
-TOOLS_IMAGE="ghcr.io/mhrj7/meterbook-db-bootstrap@$TOOLS_DIGEST"
 job_done() { [ "$(kubectl -n "$1" get job db-bootstrap -o 'jsonpath={.status.succeeded}')" = 1 ]; }
 
 for env in dev staging; do

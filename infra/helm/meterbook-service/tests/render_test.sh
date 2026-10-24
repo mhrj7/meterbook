@@ -39,7 +39,7 @@ for kind in ServiceAccount Deployment Service PodDisruptionBudget NetworkPolicy;
 done
 [ "$(count '^kind: HorizontalPodAutoscaler$' "$out")" -eq 0 ] && ok "no HPA when autoscaling is disabled" || bad "no HPA when autoscaling is disabled"
 has '^  replicas: 2$' "$out" && ok "fixed replica count used when autoscaling is disabled" || bad "fixed replica count used when autoscaling is disabled"
-has 'image: ghcr.io/stefanprodan/podinfo@sha256:' "$out" && ok "image pinned by digest, not tag" || bad "image pinned by digest, not tag"
+has 'image: ghcr.io/mhrj7/meterbook-smoke@sha256:' "$out" && ok "image pinned by digest, not tag" || bad "image pinned by digest, not tag"
 
 for rule in 'runAsNonRoot: true' 'readOnlyRootFilesystem: true' 'allowPrivilegeEscalation: false' 'privileged: false' \
             'drop: \["ALL"\]' 'type: RuntimeDefault' 'enableServiceLinks: false'; do
@@ -80,7 +80,7 @@ out=$(render -f "$SMOKE" --set 'networkPolicy.allowFromNamespaces[0]=meterbook-s
 has 'kubernetes.io/metadata.name: meterbook-staging' "$out" && ok "extra namespaces can be allowed explicitly" || bad "extra namespaces can be allowed explicitly"
 
 out=$(render -f "$SMOKE" --set image.digest= --set image.tag=6.15.0)
-has 'image: ghcr.io/stefanprodan/podinfo:6.15.0' "$out" && ok "tag used when no digest is set" || bad "tag used when no digest is set"
+has 'image: ghcr.io/mhrj7/meterbook-smoke:6.15.0' "$out" && ok "tag used when no digest is set" || bad "tag used when no digest is set"
 
 # --- guard rails --------------------------------------------------------------------------------------------------
 expect_render_fails "requires an image repository" "image.repository is required"

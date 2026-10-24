@@ -1,0 +1,18 @@
+{{- /*
+Each application namespace: enrolled in the ambient mesh and in image admission. Other Applications create these
+namespaces too (CreateNamespace=true); server-side apply lets this chart own only these labels, and Delete=false keeps
+a prune from ever deleting a namespace with everything in it. Both labels live here because ArgoCD applies every
+chart with one field manager: two charts labelling the same namespace would remove each other's labels.
+*/}}
+{{- range .Values.namespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  labels:
+    istio.io/dataplane-mode: ambient
+    policy.sigstore.dev/include: "true"
+  annotations:
+    argocd.argoproj.io/sync-options: Delete=false,ServerSideApply=true
+{{- end }}

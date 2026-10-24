@@ -17,3 +17,4 @@ to this index.
 | [0009](0009-tenancy-and-row-level-security.md) | Tenant hierarchy (tenant > project > environment) and PostgreSQL row-level security | Accepted | MB-T08 |
 | [0010](0010-api-keys.md) | Environment-scoped API keys, hashed at rest, verified by the identity service | Accepted | MB-T09 |
 | [0011](0011-service-mesh-mtls.md) | Service mesh mTLS with Istio in ambient mode, strict mesh-wide | Accepted | MB-T10 |
+| [0012](0012-signed-images-only.md) | Application namespaces admit only signed images (Sigstore policy-controller) | Accepted | MB-T05, MB-T06 |

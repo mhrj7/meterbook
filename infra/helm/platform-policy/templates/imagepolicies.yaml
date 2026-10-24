@@ -1,0 +1,26 @@
+{{- /*
+Only images signed by a known workflow run in application namespaces (ADR-0012). Keyless: Fulcio certificates issued
+to GitHub Actions' OIDC identity, recorded in Rekor. The subject must match exactly, so an image signed by any other
+repository, branch or workflow is refused.
+*/}}
+{{- range .Values.imagePolicies }}
+---
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: {{ .name }}
+spec:
+  # Explicit, so the stored policy matches Git exactly (the defaulting webhook would add both otherwise).
+  mode: enforce
+  images:
+    - glob: {{ .glob | quote }}
+  authorities:
+    - name: github-actions
+      keyless:
+        url: https://fulcio.sigstore.dev
+        identities:
+          - issuer: https://token.actions.githubusercontent.com
+            subjectRegExp: {{ .subjectRegExp | quote }}
+      ctlog:
+        url: https://rekor.sigstore.dev
+{{- end }}

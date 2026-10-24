@@ -71,7 +71,7 @@ We will use **Option A**:
   cluster-level differences; prod GitOps bootstrap needs an in-VPC runner (follow-up); ArgoCD adds a component to
   upgrade.
 - **Follow-up work:** MB-T07+ add services as `deploy/services/<name>/` values; signature verification on admission
-  (ADR-0003); in-VPC bootstrap path for prod.
+  (ADR-0003; done in ADR-0012); in-VPC bootstrap path for prod.
 
 ## How we will know it was wrong
 

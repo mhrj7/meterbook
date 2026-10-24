@@ -1,0 +1,90 @@
+# PROD: every git source is pinned to one commit SHA; change it only with scripts/promote-prod.sh (ADR-0006).
+# What application namespaces may do (ADR-0011, ADR-0012): Sigstore's policy-controller admits only signed images, and
+# platform-policy enrols the namespaces in the mesh (strict mTLS) and in image admission, with the image policies.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-policy-controller
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-14"
+spec:
+  project: platform
+  source:
+    repoURL: https://sigstore.github.io/helm-charts
+    chart: policy-controller
+    targetRevision: 0.10.8
+    helm:
+      releaseName: policy-controller
+      valuesObject:
+        webhook:
+          # An image that matches no ClusterImagePolicy is refused, not waved through.
+          configData:
+            no-match-policy: deny
+          replicaCount: 2
+          resources:
+            requests: { cpu: 20m, memory: 64Mi }
+            limits: { memory: 256Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: cosign-system
+  # The controller reconciles its own webhooks: it writes their CA, the service path and an exclusion it adds to the
+  # namespace selector. Ignored so ArgoCD neither reports nor reverts that; the rest of each webhook stays in Git.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      name: policy.sigstore.dev
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+        - .webhooks[]?.clientConfig.service.path
+        - .webhooks[]?.namespaceSelector
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: policy.sigstore.dev
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+        - .webhooks[]?.clientConfig.service.path
+        - .webhooks[]?.namespaceSelector
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-policy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-12"
+spec:
+  project: platform
+  source:
+    repoURL: https://github.com/mhrj7/meterbook.git
+    targetRevision: 2c2a5655e7bc3d08b802a026b78a35fa2cd792c2
+    path: infra/helm/platform-policy
+    helm:
+      releaseName: platform-policy
+      valueFiles:
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: istio-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      # The PeerAuthentication and ClusterImagePolicy CRDs come from the Istio and policy-controller Applications.
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m
