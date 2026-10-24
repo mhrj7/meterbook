@@ -50,6 +50,14 @@ public class SsoConnectionRepository {
         .map(SsoConnectionRepository::map);
   }
 
+  /** The tenant's connection; there is at most one. */
+  public Optional<SsoConnection> forTenant(UUID tenant) {
+    return db.selectFrom(SSO_CONNECTIONS)
+        .where(SSO_CONNECTIONS.TENANT_ID.eq(tenant))
+        .fetchOptional()
+        .map(SsoConnectionRepository::map);
+  }
+
   public boolean existsFor(UUID tenant) {
     return db.fetchExists(SSO_CONNECTIONS, SSO_CONNECTIONS.TENANT_ID.eq(tenant));
   }

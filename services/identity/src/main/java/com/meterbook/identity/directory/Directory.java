@@ -29,6 +29,24 @@ public interface Directory {
 
   void grantRealmRole(UUID user, String role);
 
+  void updateUser(UUID user, String email, String firstName, String lastName);
+
+  /**
+   * Enables or disables sign-in; disabling does not end existing sessions (see {@link #logout}).
+   */
+  void setEnabled(UUID user, boolean enabled);
+
+  /** Ends every session of the user, so refresh tokens stop working immediately. */
+  void logout(UUID user);
+
+  void removeMember(UUID organization, UUID user);
+
+  /**
+   * Links the user to an identity provider: a sign-in there whose subject is {@code subject} is
+   * this user. Replaces an existing link to the same provider.
+   */
+  void linkIdentity(UUID user, String providerAlias, String subject);
+
   /**
    * A tenant's SAML 2.0 identity provider as Keycloak brokers it.
    *

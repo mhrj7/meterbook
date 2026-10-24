@@ -1,6 +1,7 @@
 package com.meterbook.identity.sso;
 
 import com.meterbook.identity.directory.Directory;
+import com.meterbook.identity.scim.ScimUsers;
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
 import com.meterbook.identity.web.ApiException;
@@ -41,6 +42,7 @@ public class SsoConnectionService {
   public record ServiceProvider(String entityId, String acsUrl, String metadataUrl) {}
 
   private final Directory directory;
+  private final ScimUsers scimUsers;
   private final SsoConnectionRepository connections;
   private final TransactionTemplate transaction;
   private final SsoProperties properties;
@@ -48,11 +50,13 @@ public class SsoConnectionService {
 
   public SsoConnectionService(
       Directory directory,
+      ScimUsers scimUsers,
       SsoConnectionRepository connections,
       TransactionTemplate transaction,
       SsoProperties properties,
       Clock clock) {
     this.directory = directory;
+    this.scimUsers = scimUsers;
     this.connections = connections;
     this.transaction = transaction;
     this.properties = properties;
@@ -91,6 +95,8 @@ public class SsoConnectionService {
               request.ssoUrl(),
               certificate));
       providerCreated = true;
+      // Users provisioned before the connection existed sign in through it as themselves.
+      scimUsers.linkAll(tenant, alias);
       transaction.executeWithoutResult(status -> connections.insert(stored));
       return new Connection(stored, serviceProvider);
     } catch (RuntimeException e) {

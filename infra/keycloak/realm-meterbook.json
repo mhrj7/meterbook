@@ -420,5 +420,7 @@
         }
       ]
     }
-  ]
+  ],
+  "registrationEmailAsUsername": true,
+  "editUsernameAllowed": false
 }

@@ -202,6 +202,67 @@ public final class KeycloakDirectory implements Directory {
         });
   }
 
+  @Override
+  public void updateUser(UUID user, String email, String firstName, String lastName) {
+    retried(
+        () ->
+            http.put()
+                .uri(admin + "/users/" + user)
+                .headers(this::bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                // The realm keeps the username equal to the email (registrationEmailAsUsername).
+                .body(Map.of("email", email, "firstName", firstName, "lastName", lastName))
+                .retrieve()
+                .toBodilessEntity());
+  }
+
+  @Override
+  public void setEnabled(UUID user, boolean enabled) {
+    retried(
+        () ->
+            http.put()
+                .uri(admin + "/users/" + user)
+                .headers(this::bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("enabled", enabled))
+                .retrieve()
+                .toBodilessEntity());
+  }
+
+  @Override
+  public void logout(UUID user) {
+    retried(
+        () ->
+            http.post()
+                .uri(admin + "/users/" + user + "/logout")
+                .headers(this::bearer)
+                .retrieve()
+                .toBodilessEntity());
+  }
+
+  @Override
+  public void removeMember(UUID organization, UUID user) {
+    retried(() -> delete(admin + "/organizations/" + organization + "/members/" + user));
+  }
+
+  @Override
+  public void linkIdentity(UUID user, String providerAlias, String subject) {
+    String path = admin + "/users/" + user + "/federated-identity/" + providerAlias;
+    retried(
+        () -> {
+          delete(path); // a user has at most one link per provider; replace it
+          http.post()
+              .uri(path)
+              .headers(this::bearer)
+              .contentType(MediaType.APPLICATION_JSON)
+              .body(
+                  Map.of("identityProvider", providerAlias, "userId", subject, "userName", subject))
+              .retrieve()
+              .toBodilessEntity();
+          return null;
+        });
+  }
+
   /**
    * The realm's first-sign-in flow: create the user if the email is unused, never link by email.
    */
