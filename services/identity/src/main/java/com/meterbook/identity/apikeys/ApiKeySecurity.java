@@ -1,6 +1,7 @@
 package com.meterbook.identity.apikeys;
 
 import com.meterbook.identity.web.ApiErrors;
+import com.meterbook.identity.web.BearerTokens;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -65,16 +66,15 @@ public class ApiKeySecurity {
         HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {
       response.setHeader("Cache-Control", "no-store");
-      String header = request.getHeader("Authorization");
-      if (header != null && header.regionMatches(true, 0, "Bearer ", 0, 7)) {
-        keys.authenticate(header.substring(7).trim())
-            .ifPresent(
-                holder -> {
-                  var context = SecurityContextHolder.createEmptyContext();
-                  context.setAuthentication(new ApiKeyAuthentication(holder));
-                  SecurityContextHolder.setContext(context);
-                });
-      }
+      // Authenticated only by a live key in the database; the header alone decides nothing.
+      BearerTokens.of(request)
+          .flatMap(keys::authenticate)
+          .ifPresent(
+              holder -> {
+                var context = SecurityContextHolder.createEmptyContext();
+                context.setAuthentication(new ApiKeyAuthentication(holder));
+                SecurityContextHolder.setContext(context);
+              });
       chain.doFilter(request, response);
     }
   }

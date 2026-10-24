@@ -44,7 +44,7 @@ We will use **Option C**, Istio **1.31.3** in ambient mode, installed by ArgoCD 
 - **Strict mTLS:** a mesh-wide `PeerAuthentication` in `istio-system` with `mtls.mode: STRICT`. An enrolled pod
   accepts only mTLS from other mesh workloads; plaintext is rejected even where a NetworkPolicy would allow it.
 - **Enrollment:** each application namespace (`meterbook-<env>`) carries `istio.io/dataplane-mode: ambient`, set in
-  Git by the `platform-mesh` chart (not by hand, never deleted by a prune). Platform namespaces (ArgoCD, External
+  Git by the `platform-mesh` chart (renamed `platform-policy` when it also took on image admission, ADR-0012) (not by hand, never deleted by a prune). Platform namespaces (ArgoCD, External
   Secrets, kube-system) stay outside the mesh.
 - **NetworkPolicies** of every workload (the shared library chart) also allow port 15008 from the same peers as the
   service port, and kubelet probes from `169.254.7.127/32`, as ambient requires. NetworkPolicy and mTLS are two

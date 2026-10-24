@@ -23,3 +23,16 @@ updates:
         patterns: ["*"]
     commit-message:
       prefix: build
+
+  # Base images of every service image, including the re-published podinfo of services/smoke (ADR-0012): pinned by
+  # digest, so they move only through these pull requests.
+  - package-ecosystem: docker
+    directories:
+      - /services/*
+    schedule:
+      interval: weekly
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: build

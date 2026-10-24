@@ -21,6 +21,9 @@ spec:
           configData:
             no-match-policy: deny
           replicaCount: 1
+          # One replica: the chart's PDB (minAvailable 1) would block every node drain. Prod runs two with it.
+          podDisruptionBudget:
+            enabled: false
           resources:
             requests: { cpu: 20m, memory: 64Mi }
             limits: { memory: 256Mi }
