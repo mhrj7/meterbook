@@ -276,7 +276,8 @@ api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycl
   echo "tenant_id=$tenant"
   echo "get_tenant=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$id/v1/tenants/$tenant")"
 ')
-field() { sed -n "s/^$1=//p" <<<"$api"; }
+# kubectl run -i can deliver a pod's output twice (attach, then logs), so each key is read from its first line only.
+field() { sed -n "s/^$1=//p" <<<"$api" | head -n1; }
 check "identity rejects a request without a token (401)" eq "$(field anonymous_me)" 401
 check "an operator token from Keycloak is accepted; /v1/me needs a tenant (403)" eq "$(field operator_me)" 403
 check "an operator creates a tenant through identity, which provisions Keycloak (201)" eq "$(field create_tenant)" 201
@@ -300,7 +301,7 @@ db=$(in_cluster identity-db meterbook-dev "[$(secret_env DB_HOST database DB_HOS
   echo "scoped=$(psql -qtA -c "begin" -c "select set_config('\''app.tenant_id'\'', '\''$TENANT'\'', true)" \
     -c "select count(*) from identity.tenants" -c "commit" 2>&1 | sed -n 2p)"
 ')
-dbf() { sed -n "s/^$1=//p" <<<"$db"; }
+dbf() { sed -n "s/^$1=//p" <<<"$db" | head -n1; }
 check "identity's migrations ran in identity_dev on RDS" test "$(dbf own)" -ge 5
 check "identity's database role cannot connect to Keycloak's database" eq "$(dbf other)" "does not have CONNECT privilege"
 check "identity's database role is no superuser and cannot bypass row-level security" eq "$(dbf bypass)" f
