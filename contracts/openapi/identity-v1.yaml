@@ -25,6 +25,8 @@ tags:
     description: Tenants (platform administrators only).
   - name: sso
     description: Enterprise SSO connections for the caller's tenant.
+  - name: projects
+    description: Projects and their environments inside the caller's tenant (MB-T08).
   - name: scim-tokens
     description: Credentials for the tenant's SCIM client.
   - name: scim
@@ -185,6 +187,162 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      summary: List the tenant's projects
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        "200":
+          description: A page of projects.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [projects]
+      operationId: createProject
+      summary: Create a project with a production (live) and a sandbox (test) environment
+      description: Requires the `tenant-admin` role. At most 100 projects per tenant.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProject" }
+      responses:
+        "201":
+          description: Project created.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/projects/{project_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [projects]
+      operationId: getProject
+      summary: Get a project and its environments
+      responses:
+        "200":
+          description: The project.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      summary: Rename a project
+      description: Requires the `tenant-admin` role. Setting the same name again changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProject" }
+      responses:
+        "200":
+          description: The renamed project.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/projects/{project_id}/environments:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [projects]
+      operationId: listEnvironments
+      summary: List a project's environments
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        "200":
+          description: A page of environments.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EnvironmentList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [projects]
+      operationId: createEnvironment
+      summary: Add an environment to a project
+      description: Requires the `tenant-admin` role. At most 20 environments per project.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEnvironment" }
+      responses:
+        "201":
+          description: Environment created.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Environment" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/projects/{project_id}/environments/{environment_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - name: environment_id
+        in: path
+        required: true
+        schema: { $ref: "#/components/schemas/Id" }
+    get:
+      tags: [projects]
+      operationId: getEnvironment
+      summary: Get an environment
+      responses:
+        "200":
+          description: The environment.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Environment" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
 
   /v1/scim-tokens:
     get:
@@ -561,6 +719,11 @@ components:
       required: true
       description: Client-generated key; the same key and body within 24 h return the stored response.
       schema: { type: string, minLength: 1, maxLength: 255 }
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/Id" }
     TenantId:
       name: tenant_id
       in: path
@@ -757,6 +920,80 @@ components:
           type: array
           items: { type: string }
         created_at: { type: string, format: date-time }
+
+    Slug:
+      type: string
+      pattern: "^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$"
+
+    CreateProject:
+      type: object
+      required: [name, slug]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { $ref: "#/components/schemas/Slug" }
+
+    UpdateProject:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+
+    Project:
+      type: object
+      required: [id, name, slug, environments, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        slug: { type: string }
+        environments:
+          type: array
+          items: { $ref: "#/components/schemas/Environment" }
+        created_at: { type: string, format: date-time }
+
+    ProjectList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Project" }
+        has_more: { type: boolean }
+        next_cursor: { type: [string, "null"] }
+
+    CreateEnvironment:
+      type: object
+      required: [name, slug, kind]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        slug: { $ref: "#/components/schemas/Slug" }
+        kind:
+          type: string
+          enum: [live, test]
+          description: "`live` handles real usage and money; `test` never does."
+
+    Environment:
+      type: object
+      required: [id, project_id, name, slug, kind, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        slug: { type: string }
+        kind: { type: string, enum: [live, test] }
+        created_at: { type: string, format: date-time }
+
+    EnvironmentList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Environment" }
+        has_more: { type: boolean }
+        next_cursor: { type: [string, "null"] }
 
     CreateSsoConnection:
       type: object

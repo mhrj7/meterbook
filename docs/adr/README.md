@@ -14,3 +14,4 @@ to this index.
 | [0006](0006-gitops-with-argocd.md) | GitOps with ArgoCD, a shared Helm library chart, and SHA-pinned production | Accepted | MB-T06 |
 | [0007](0007-identity-keycloak-broker-and-scim.md) | Keycloak as authorization server and SSO broker, tenants as Keycloak organizations, SCIM in the identity service | Accepted | MB-T07 |
 | [0008](0008-java-service-stack.md) | Java service stack: Java 25, Spring Boot 4.1, Gradle 9, jOOQ and Flyway | Accepted | MB-T07 |
+| [0009](0009-tenancy-and-row-level-security.md) | Tenant hierarchy (tenant > project > environment) and PostgreSQL row-level security | Accepted | MB-T08 |
