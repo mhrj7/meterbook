@@ -27,7 +27,8 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- end }}
 
 {{- define "meterbook-lib.imageVersion" -}}
-{{- if .Values.image.tag }}{{ .Values.image.tag }}{{ else }}{{ .Values.image.digest | trunc 19 }}{{ end -}}
+{{- /* A label value cannot contain ':', so a digest-only image is labelled with its first 12 hex characters. */ -}}
+{{- if .Values.image.tag }}{{ .Values.image.tag }}{{ else }}{{ .Values.image.digest | trimPrefix "sha256:" | trunc 12 }}{{ end -}}
 {{- end }}
 
 {{/*

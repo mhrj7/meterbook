@@ -1,0 +1,9 @@
+dependencies:
+- name: meterbook-service
+  repository: file://../meterbook-service
+  version: 0.1.0
+- name: meterbook-service
+  repository: file://../meterbook-service
+  version: 0.1.0
+digest: sha256:5995674ec026d53926104d85e2076f2eef95afc4b1a55b4d7037f0430b50ddb3
+generated: "2026-10-24T07:25:08.888054+05:30"

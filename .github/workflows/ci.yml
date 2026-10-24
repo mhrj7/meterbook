@@ -59,6 +59,7 @@ jobs:
               - '.github/workflows/ci.yml'
             helm:
               - 'infra/helm/**'
+              - 'infra/keycloak/**'
               - 'deploy/**'
               - '.github/workflows/ci.yml'
             gitops:
@@ -192,7 +193,8 @@ jobs:
           helm dependency build infra/helm/meterbook-service
           # The service chart is linted with every service's values; other charts with their own values files.
           for values in deploy/services/*/*.yaml; do helm lint --strict infra/helm/meterbook-service -f "$values"; done
-          for chart in infra/helm/platform-secrets; do
+          helm dependency build infra/helm/identity-stack
+          for chart in infra/helm/platform-secrets infra/helm/identity-stack; do
             for values in "$chart"/values-*.yaml; do helm lint --strict "$chart" -f "$values"; done
           done
       - name: Render tests

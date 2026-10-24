@@ -1,0 +1,47 @@
+# identity-stack in meterbook-dev.
+environment: dev
+databaseSecretEnvironment: dev
+
+# Image digests are pinned by the release PR that follows each image build (docs/runbooks/gitops.md).
+dbBootstrap:
+  image:
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+
+keycloak:
+  image:
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  env:
+    - {name: KC_HOSTNAME, value: "http://keycloak.meterbook-dev.svc.cluster.local"}
+    - {name: KC_HTTP_ENABLED, value: "true"}
+    - {name: KC_HTTP_PORT, value: "8080"}
+    - {name: KC_DB_URL_DATABASE, value: keycloak_dev}
+    - {name: KC_DB_USERNAME, value: keycloak_dev}
+    - {name: KC_DB_URL_PROPERTIES, value: "?sslmode=require"}
+    - name: KC_DB_URL_HOST
+      valueFrom: {secretKeyRef: {name: database, key: DB_HOST}}
+    - name: KC_DB_URL_PORT
+      valueFrom: {secretKeyRef: {name: database, key: DB_PORT}}
+    - name: KC_DB_PASSWORD
+      valueFrom: {secretKeyRef: {name: keycloak-db, key: password}}
+    - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: bootstrap-admin}
+    - {name: KC_LOG_CONSOLE_OUTPUT, value: json}
+    - {name: MB_PORTAL_URL, value: "http://portal.meterbook-dev.svc.cluster.local"}
+
+identity:
+  image:
+    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  env:
+    - {name: KEYCLOAK_URL, value: "http://keycloak.meterbook-dev.svc.cluster.local"}
+    - {name: KEYCLOAK_ISSUER, value: "http://keycloak.meterbook-dev.svc.cluster.local/realms/meterbook"}
+    - {name: KEYCLOAK_JWKS_URI, value: "http://keycloak.meterbook-dev.svc.cluster.local/realms/meterbook/protocol/openid-connect/certs"}
+    - name: KEYCLOAK_CLIENT_SECRET
+      valueFrom: {secretKeyRef: {name: keycloak-clients, key: MB_IDENTITY_CLIENT_SECRET}}
+    - name: DB_HOST
+      valueFrom: {secretKeyRef: {name: database, key: DB_HOST}}
+    - name: DB_PORT
+      valueFrom: {secretKeyRef: {name: database, key: DB_PORT}}
+    - {name: DB_URL, value: "jdbc:postgresql://$(DB_HOST):$(DB_PORT)/identity_dev?sslmode=require"}
+    - {name: DB_USERNAME, value: identity_dev}
+    - name: DB_PASSWORD
+      valueFrom: {secretKeyRef: {name: identity-db, key: password}}
+    - {name: TRACING_SAMPLING_PROBABILITY, value: "1.0"}

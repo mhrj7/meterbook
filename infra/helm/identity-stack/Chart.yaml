@@ -1,0 +1,14 @@
+apiVersion: v2
+name: identity-stack
+description: Keycloak and the identity service for one environment, with their database bootstrap and generated secrets (MB-T07, ADR-0007).
+type: application
+version: 0.1.0
+dependencies:
+  - name: meterbook-service
+    alias: keycloak
+    version: 0.1.0
+    repository: file://../meterbook-service
+  - name: meterbook-service
+    alias: identity
+    version: 0.1.0
+    repository: file://../meterbook-service

@@ -99,6 +99,8 @@ has 'name: keycloak-realm' "$out" && has 'readOnly: true' "$out" && ok "mounts a
 has 'readOnlyRootFilesystem: true' "$out" && ok "root filesystem stays read-only with extra mounts" || bad "root filesystem stays read-only with extra mounts"
 out=$(render -f "$SMOKE")
 [ "$(count 'port: http$' "$out")" -ge 3 ] && ! has 'name: management' "$out" && ok "probes default to the http port" || bad "probes default to the http port"
+out=$(render -f "$MGMT")
+has 'app.kubernetes.io/version: "?000000000000"?$' "$out" && ! has 'version: "?sha256' "$out" && ok "a digest-only image gets a valid version label" || bad "a digest-only image gets a valid version label"
 expect_render_fails "probes on management need a management port" "needs managementPort" -f "$MGMT" --set managementPort=0
 expect_render_fails "rejects an unknown probe port" "must be http or management" -f "$MGMT" --set probes.port=admin
 expect_render_fails "reserves the tmp volume name" "tmp is reserved" -f "$MGMT" --set 'writablePaths[0].name=tmp' --set 'writablePaths[0].path=/x'

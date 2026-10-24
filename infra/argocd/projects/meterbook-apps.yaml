@@ -1,5 +1,5 @@
-# Meterbook services. Least privilege: only the namespaced kinds the meterbook-service chart renders, only in the
-# meterbook-* namespaces, only from this repository.
+# Meterbook services. Least privilege: only the namespaced kinds the meterbook-service and identity-stack charts
+# render, only in the meterbook-* namespaces, only from this repository.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -38,3 +38,8 @@ spec:
       kind: NetworkPolicy
     - group: external-secrets.io
       kind: ExternalSecret
+    # identity-stack: generated credentials and the database bootstrap Job (MB-T07).
+    - group: generators.external-secrets.io
+      kind: Password
+    - group: batch
+      kind: Job

@@ -1,0 +1,12 @@
+# The realm as code (infra/keycloak/realm-meterbook.json), imported by Keycloak at start-up. Keycloak skips realms
+# that already exist, so later changes are applied by the identity service or an admin, not by re-import.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  labels: {{- include "identity-stack.labels" . | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+data:
+  realm-meterbook.json: |-
+{{ .Files.Get "files/realm-meterbook.json" | required "files/realm-meterbook.json is missing" | indent 4 }}
