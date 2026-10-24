@@ -59,8 +59,9 @@ def app_spec(doc):
 
 def on_main(repo_root, sha):
     for ref in ("origin/main", "main"):
+        # Exit status is the answer (0: ancestor, 1: not), so a non-zero status is not an error here.
         result = subprocess.run(["git", "-C", str(repo_root), "merge-base", "--is-ancestor", sha, ref],
-                                capture_output=True)
+                                capture_output=True, check=False)
         if result.returncode == 0:
             return True
     return False

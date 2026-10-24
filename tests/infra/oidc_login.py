@@ -86,7 +86,7 @@ def main():
             if not fields:
                 raise SystemExit("login: unexpected form with inputs " + ",".join(names))
             page = opener.open(action, urllib.parse.urlencode(fields).encode(), timeout=10).read().decode()
-        error = re.search(r'class="[^"]*(?:alert-error|kc-feedback-text)[^"]*"[^>]*>(.*?)<', page, re.S)
+        error = re.search(r'class="[^"]*(?:alert-error|kc-feedback-text)[^"]*"[^>]*>(.*?)<', page, re.DOTALL)
         raise SystemExit("login: not signed in" + (": " + html.unescape(error.group(1)).strip() if error else ""))
     except Redirected as done:
         query = urllib.parse.parse_qs(urllib.parse.urlparse(done.url).query)

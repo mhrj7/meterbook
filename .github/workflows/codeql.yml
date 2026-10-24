@@ -1,0 +1,65 @@
+# CodeQL SAST (TC-PLT-005): Java, Python and the workflows themselves, on every pull request, on main and weekly
+# (new queries find old bugs). Results go to code scanning; a high or critical finding fails the run.
+name: codeql
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  analyze:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        # build-mode none: CodeQL reads the sources directly, so no Gradle build (or its JDK 25 toolchain) is needed.
+        language: [java-kotlin, python, actions]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: /language:${{ matrix.language }}
+          output: sarif
+      - name: Fail on high or critical findings
+        run: |
+          python3 - <<'PY'
+          import glob, json, sys
+          rules, high = {}, []
+          for path in glob.glob("sarif/*.sarif"):
+              for run in json.load(open(path))["runs"]:
+                  for rule in run["tool"]["driver"].get("rules", []):
+                      rules[rule["id"]] = float(rule.get("properties", {}).get("security-severity", 0) or 0)
+                  for result in run.get("results", []):
+                      if rules.get(result["ruleId"], 0) >= 7.0:
+                          location = result["locations"][0]["physicalLocation"]
+                          high.append(f'{result["ruleId"]} {location["artifactLocation"]["uri"]}:'
+                                      f'{location.get("region", {}).get("startLine", "?")}')
+          for finding in high:
+              print(f"::error::{finding}")
+          print(f"{len(high)} high or critical findings")
+          sys.exit(1 if high else 0)
+          PY
