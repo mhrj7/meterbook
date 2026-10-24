@@ -137,7 +137,10 @@ class KeycloakDirectoryTest {
     assertThat(config.get("wantAuthnRequestsSigned").asString()).isEqualTo("true");
     assertThat(config.get("signingCertificate").asString()).isEqualTo(certificate);
     assertThat(config.get("entityId").asString()).isEqualTo(spEntityId);
-    assertThat(config.get("kc.org.domain").asString()).isEqualTo("ANY");
+    assertThat(admin.domainsOf(organization))
+        .allSatisfy(
+            d -> assertThat(d.get("identityProviderAlias").asString()).isEqualTo(providerAlias))
+        .allSatisfy(d -> assertThat(d.get("autoRedirect").asBoolean()).isTrue());
     assertThat(admin.identityProvidersOf(organization)).containsExactly(providerAlias);
 
     String descriptor =

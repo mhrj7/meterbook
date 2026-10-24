@@ -120,6 +120,75 @@ public final class KeycloakAdmin {
     }
   }
 
+  /** A plain realm, for example a customer's identity provider. */
+  public void createRealm(String realm) {
+    send("POST", "/admin/realms", Map.of("realm", realm, "enabled", true));
+  }
+
+  public void createRealmUser(String realm, String email, String password) {
+    send(
+        "POST",
+        "/admin/realms/" + realm + "/users",
+        Map.of(
+            "username",
+            email,
+            "email",
+            email,
+            "emailVerified",
+            true,
+            "enabled",
+            true,
+            "firstName",
+            "Test",
+            "lastName",
+            "User",
+            "credentials",
+            List.of(Map.of("type", "password", "value", password, "temporary", false))));
+  }
+
+  /** The realm's RS256 signing certificate (base64 DER), which signs its SAML assertions. */
+  public String signingCertificate(String realm) {
+    return get("/admin/realms/" + realm + "/keys")
+        .get("keys")
+        .valueStream()
+        .filter(k -> "RS256".equals(k.path("algorithm").asString()) && k.has("certificate"))
+        .findFirst()
+        .orElseThrow()
+        .get("certificate")
+        .asString();
+  }
+
+  /** Makes the realm a SAML IdP for one service provider: signed assertions, email as NameID. */
+  public void createSamlClient(String realm, String serviceProviderEntityId, String acsUrl) {
+    send(
+        "POST",
+        "/admin/realms/" + realm + "/clients",
+        Map.of(
+            "clientId",
+            serviceProviderEntityId,
+            "protocol",
+            "saml",
+            "enabled",
+            true,
+            "redirectUris",
+            List.of(acsUrl),
+            "frontchannelLogout",
+            false,
+            "attributes",
+            Map.of(
+                "saml_assertion_consumer_url_post", acsUrl,
+                "saml.assertion.signature", "true",
+                "saml.server.signature", "true",
+                "saml.client.signature", "false",
+                "saml.signature.algorithm", "RSA_SHA256",
+                "saml_name_id_format", "email",
+                "saml.force.name.id.format", "true")));
+  }
+
+  public List<JsonNode> domainsOf(UUID organization) {
+    return get(REALM + "/organizations/" + organization).get("domains").valueStream().toList();
+  }
+
   public void setPassword(UUID user, String password) {
     send(
         "PUT",

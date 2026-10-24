@@ -327,6 +327,52 @@ jobs:
           path: services/${{ matrix.service }}/build/reports
           retention-days: 7
 
+  sso-e2e:
+    name: SSO end-to-end (browser, SAML IdP, SCIM)
+    needs: changes
+    if: contains(fromJSON(needs.changes.outputs.java), 'identity')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: services/identity
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Cache Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ hashFiles('services/identity/gradle/libs.versions.toml') }}
+      - name: Install Chromium
+        run: ./gradlew playwrightInstall --no-daemon
+      - name: SSO end-to-end (TC-PLT-001)
+        run: ./gradlew e2eTest --no-daemon
+      - name: Summarise
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, xml.etree.ElementTree as ET
+          print("### SSO end-to-end\n")
+          for f in glob.glob("build/test-results/e2eTest/*.xml"):
+              for tc in ET.parse(f).getroot().iter("testcase"):
+                  status = "FAIL" if tc.find("failure") is not None else "pass"
+                  print(f"- {status} {tc.get('name')} ({float(tc.get('time')):.1f} s)")
+          PY
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sso-e2e-reports
+          path: services/identity/build/reports
+          retention-days: 7
+
   containers:
     name: Container ${{ matrix.service }}
     # After the Java tests, so an image is only built (and on main, published) from code that passed them.
@@ -382,7 +428,7 @@ jobs:
   ci:
     name: ci
     if: always()
-    needs: [changes, secrets, workflow-lint, contracts, java, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
+    needs: [changes, secrets, workflow-lint, contracts, java, sso-e2e, terraform, helm, secrets-e2e, gitops-policy, gitops-e2e, containers]
     runs-on: ubuntu-latest
     steps:
       - name: All required jobs passed or were skipped

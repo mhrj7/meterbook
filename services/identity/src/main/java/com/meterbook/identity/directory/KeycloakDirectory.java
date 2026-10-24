@@ -20,6 +20,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.ObjectNode;
 
 /**
  * {@link Directory} on Keycloak's admin REST API, authenticated as the {@code meterbook-identity}
@@ -285,10 +286,7 @@ public final class KeycloakDirectory implements Directory {
                 "nameIDPolicyFormat", "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"),
             Map.entry("principalType", "SUBJECT"),
             Map.entry("syncMode", "FORCE"),
-            Map.entry("allowedClockSkew", "30"),
-            // Route sign-ins for any of the organization's domains to this IdP.
-            Map.entry("kc.org.domain", "ANY"),
-            Map.entry("kc.org.broker.redirect.mode.email-matches", "true"));
+            Map.entry("allowedClockSkew", "30"));
     call(
         () ->
             http.post()
@@ -332,6 +330,35 @@ public final class KeycloakDirectory implements Directory {
               throw e;
             }
           }
+          return null;
+        });
+    routeDomains(organization, provider.alias());
+  }
+
+  /**
+   * Keycloak 26.8 routes by domain: each organization domain names the identity provider its users
+   * sign in with, and {@code autoRedirect} sends them there straight from the email prompt.
+   */
+  private void routeDomains(UUID organization, String alias) {
+    retried(
+        () -> {
+          JsonNode current =
+              http.get()
+                  .uri(admin + "/organizations/" + organization)
+                  .headers(this::bearer)
+                  .retrieve()
+                  .body(JsonNode.class);
+          ObjectNode updated = (ObjectNode) current.deepCopy();
+          for (JsonNode domain : updated.withArray("domains")) {
+            ((ObjectNode) domain).put("identityProviderAlias", alias).put("autoRedirect", true);
+          }
+          http.put()
+              .uri(admin + "/organizations/" + organization)
+              .headers(this::bearer)
+              .contentType(MediaType.APPLICATION_JSON)
+              .body(updated)
+              .retrieve()
+              .toBodilessEntity();
           return null;
         });
   }
