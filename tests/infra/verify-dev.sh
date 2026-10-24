@@ -262,14 +262,19 @@ else
 fi
 kubectl -n meterbook-dev delete pod plaintext-client --wait=false >/dev/null 2>&1 || true
 if probe meterbook-dev mesh-client >/dev/null 2>&1; then ok "mesh: an in-mesh client reaches smoke"; else bad "mesh: an in-mesh client reaches smoke"; fi
-ztunnel_saw() { # ztunnel_saw <destination workload prefix> <source service account path>
-  kubectl -n istio-system logs -l app=ztunnel --all-containers --since=15m --tail=-1 2>/dev/null \
-    | grep -F "dst.workload=\"$1" | grep -qF "src.identity=\"spiffe://cluster.local/ns/$2\""
+ztunnel_mtls() { # ztunnel_mtls <destination workload> <source ns/sa/name>: ztunnel counted an mTLS connection between them
+  # Counters include connections still open (pooled clients log nothing until they close).
+  local z
+  for z in $(kubectl -n istio-system get pods -l app=ztunnel -o 'jsonpath={.items[*].metadata.name}'); do
+    kubectl get --raw "/api/v1/namespaces/istio-system/pods/$z:15020/proxy/metrics" 2>/dev/null
+  done | grep '^istio_tcp_connections_opened_total{' | grep -F 'reporter="destination"' \
+    | grep -F "destination_workload=\"$1\"" | grep -F "source_principal=\"spiffe://cluster.local/ns/$2\"" \
+    | grep -qF 'connection_security_policy="mutual_tls"'
 }
-if wait_until 60 ztunnel_saw smoke- meterbook-dev/sa/default; then
-  ok "mesh: ztunnel shows the request arriving over mTLS with the client's SPIFFE identity"
+if wait_until 60 ztunnel_mtls smoke meterbook-dev/sa/default; then
+  ok "mesh: ztunnel counts the request as mTLS from the client's SPIFFE identity"
 else
-  bad "mesh: ztunnel shows the request arriving over mTLS with the client's SPIFFE identity"
+  bad "mesh: ztunnel counts the request as mTLS from the client's SPIFFE identity"
 fi
 
 # --- Identity on EKS (MB-T07) ------------------------------------------------------------------------------------
@@ -408,7 +413,7 @@ check "an API key cannot call the admin API (401)" eq "$(field key_on_admin_api)
 check "the admin revokes the key (204)" eq "$(field key_revoke)" 204
 check "a revoked key is rejected (401; TC-PLT-003)" eq "$(field key_after_revoke)" 401
 check "a revoked key is rejected within 60 s (took $(field key_rejected_within_s) s)" test "$(field key_rejected_within_s)" -lt 60
-if wait_until 60 ztunnel_saw keycloak- meterbook-dev/sa/identity; then
+if wait_until 60 ztunnel_mtls keycloak meterbook-dev/sa/identity; then
   ok "mesh: identity's calls to Keycloak travel over mTLS as spiffe://cluster.local/ns/meterbook-dev/sa/identity"
 else
   bad "mesh: identity's calls to Keycloak travel over mTLS as spiffe://cluster.local/ns/meterbook-dev/sa/identity"

@@ -145,11 +145,18 @@ kubectl -n "meterbook-$FIRST" delete pod plaintext-client --wait=false >/dev/nul
 ok "plaintext request from a pod outside the mesh rejected by strict mTLS, although the NetworkPolicy admits it"
 probe "meterbook-$FIRST" mesh-client >/dev/null || die "an in-mesh client could not reach smoke"
 ok "in-mesh request to smoke succeeds"
-# ztunnel logs every connection it terminates with the peer's verified identity: proof the request went over mTLS.
-wait_until 60 "ztunnel to log the mTLS connection" bash -c \
-  "kubectl -n istio-system logs -l app=ztunnel --since=5m --tail=-1 2>/dev/null | grep -F 'dst.workload=\"smoke-' \
-     | grep -qF 'src.identity=\"spiffe://cluster.local/ns/meterbook-$FIRST/sa/default\"'"
-ok "ztunnel shows the request arriving over mTLS with the client's SPIFFE identity"
+ztunnel_mtls() { # ztunnel_mtls <destination workload> <source ns/sa/name>: ztunnel counted an mTLS connection between them
+  # Counters include connections still open (pooled clients log nothing until they close).
+  local z
+  for z in $(kubectl -n istio-system get pods -l app=ztunnel -o 'jsonpath={.items[*].metadata.name}'); do
+    kubectl get --raw "/api/v1/namespaces/istio-system/pods/$z:15020/proxy/metrics" 2>/dev/null
+  done | grep '^istio_tcp_connections_opened_total{' | grep -F 'reporter="destination"' \
+    | grep -F "destination_workload=\"$1\"" | grep -F "source_principal=\"spiffe://cluster.local/ns/$2\"" \
+    | grep -qF 'connection_security_policy="mutual_tls"'
+}
+wait_until 60 "ztunnel to count the request as mTLS from the client's SPIFFE identity" \
+  ztunnel_mtls smoke "meterbook-$FIRST/sa/default"
+ok "ztunnel counts the request as mTLS from the client's SPIFFE identity"
 
 step "5. Drift is reverted in $HEAL (self-heal)"
 kubectl -n "meterbook-$HEAL" scale deploy smoke --replicas=1 >/dev/null
