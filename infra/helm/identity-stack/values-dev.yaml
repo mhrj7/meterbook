@@ -2,14 +2,14 @@
 environment: dev
 databaseSecretEnvironment: dev
 
-# Image digests are pinned by the release PR that follows each image build (docs/runbooks/gitops.md).
+# Image digests: the images main built and signed at 1810c4c (cosign-verified against container.yml@main).
 dbBootstrap:
   image:
-    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    digest: "sha256:a25b9e89c41cd2bf12d4b15a21cf499dd0fb7ab451a32aaeda9124b0fd2a6972"
 
 keycloak:
   image:
-    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    digest: "sha256:f76d24bfc6f170ef82d8f2ffa8c09f565f217659c92a372b315d51b27438d7f9"
   env:
     - {name: KC_HOSTNAME, value: "http://keycloak.meterbook-dev.svc.cluster.local"}
     - {name: KC_HTTP_ENABLED, value: "true"}
@@ -29,7 +29,7 @@ keycloak:
 
 identity:
   image:
-    digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    digest: "sha256:18d95a9a0f653093bf49d9babf227944a204bab4576afcac55fe176265ad57fd"
   env:
     - {name: KEYCLOAK_URL, value: "http://keycloak.meterbook-dev.svc.cluster.local"}
     - {name: KEYCLOAK_ISSUER, value: "http://keycloak.meterbook-dev.svc.cluster.local/realms/meterbook"}

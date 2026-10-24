@@ -1,0 +1,34 @@
+# Keycloak and the identity service in meterbook-dev (MB-T07): secrets, database bootstrap, then the workloads,
+# ordered by sync waves inside the chart (infra/helm/identity-stack/README.md).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity-dev
+  namespace: argocd
+spec:
+  project: meterbook-apps
+  source:
+    repoURL: https://github.com/mhrj7/meterbook.git
+    targetRevision: main
+    path: infra/helm/identity-stack
+    helm:
+      releaseName: identity
+      valueFiles:
+        - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meterbook-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: false
+    syncOptions:
+      - CreateNamespace=true
+      # ExternalSecret and generator CRDs come from platform-external-secrets; retry until they exist.
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

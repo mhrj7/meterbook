@@ -221,6 +221,69 @@ else
   ok "NetworkPolicy: traffic from another namespace is blocked"
 fi
 
+# --- Identity on EKS (MB-T07) ------------------------------------------------------------------------------------
+# Keycloak and identity per environment, deployed by ArgoCD: generated secrets, the db-bootstrap Job, the workloads.
+# The API is exercised from inside the cluster (no public ingress yet), with the same image the bootstrap uses.
+TOOLS_IMAGE=$(kubectl -n meterbook-dev get job db-bootstrap -o 'jsonpath={.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+job_done() { [ "$(kubectl -n "$1" get job db-bootstrap -o 'jsonpath={.status.succeeded}')" = 1 ]; }
+
+for env in dev staging; do
+  ns="meterbook-$env"
+  if wait_until 900 app_synced "identity-$env"; then ok "ArgoCD application identity-$env Synced"; else bad "ArgoCD application identity-$env Synced ($(app_field "identity-$env" .status.sync.status))"; fi
+  if wait_until 900 app_healthy "identity-$env"; then ok "ArgoCD application identity-$env Healthy"; else bad "ArgoCD application identity-$env Healthy ($(app_field "identity-$env" .status.health.status))"; fi
+  if wait_until 120 job_done "$ns"; then ok "db-bootstrap created the $env databases and roles"; else bad "db-bootstrap created the $env databases and roles"; fi
+  for d in keycloak identity; do
+    if wait_until 300 deploy_ready "$ns" "$d" 1; then ok "$d available in $ns"; else bad "$d available in $ns"; fi
+  done
+  check "identity and keycloak pods run as non-root with a read-only root filesystem in $ns" bash -c "
+    kubectl -n $ns get pods -l 'app.kubernetes.io/name in (keycloak,identity)' -o jsonpath='{range .items[*]}{.spec.securityContext.runAsNonRoot} {.spec.containers[0].securityContext.readOnlyRootFilesystem}{\"\\n\"}{end}' \
+      | grep -v '^true true$' | grep -q . && exit 1 || exit 0"
+done
+
+in_cluster() { # in_cluster <name> <namespace> <env-json> <script>: run a script in the tools image, print its output
+  kubectl -n "$2" run "$1" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --command \
+    --overrides="{\"spec\":{\"securityContext\":{\"runAsNonRoot\":true,\"runAsUser\":10001,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"containers\":[{\"name\":\"$1\",\"image\":\"$TOOLS_IMAGE\",\"command\":[\"bash\",\"-c\",$(jq -Rs . <<<"$4")],\"env\":$3,\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]}}}]}}" \
+    -- true 2>/dev/null
+}
+secret_env() { # secret_env <var> <secret> <key>
+  printf '{"name":"%s","valueFrom":{"secretKeyRef":{"name":"%s","key":"%s"}}}' "$1" "$2" "$3"
+}
+
+# The API: an operator token from Keycloak, then tenants through the identity service. The scripts below run in the
+# pod, so their variables expand there (single quotes are intended).
+SLUG="verify-$(date +%s)"
+# shellcheck disable=SC2016
+api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycloak-clients MB_OPERATOR_CLIENT_SECRET),{\"name\":\"SLUG\",\"value\":\"$SLUG\"}]" '
+  set -u
+  kc=http://keycloak.meterbook-dev.svc.cluster.local
+  id=http://identity.meterbook-dev.svc.cluster.local
+  token=$(curl -sf "$kc/realms/meterbook/protocol/openid-connect/token" -d grant_type=client_credentials \
+    -d client_id=meterbook-operator --data-urlencode "client_secret=$OPERATOR_SECRET" | jq -r .access_token)
+  echo "anonymous_me=$(curl -s -o /dev/null -w "%{http_code}" "$id/v1/me")"
+  echo "operator_me=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$id/v1/me")"
+  created=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $token" -H "Idempotency-Key: $SLUG" \
+    -H "Content-Type: application/json" "$id/v1/tenants" \
+    -d "$(jq -cn --arg s "$SLUG" "{name: \"Verify\", slug: \$s, domains: [\"\(\$s).test\"], initial_admin_email: \"admin@\(\$s).test\"}")")
+  echo "create_tenant=$(tail -n1 <<<"$created")"
+  tenant=$(head -n1 <<<"$created" | jq -r .id)
+  echo "get_tenant=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$id/v1/tenants/$tenant")"
+')
+field() { sed -n "s/^$1=//p" <<<"$api"; }
+check "identity rejects a request without a token (401)" eq "$(field anonymous_me)" 401
+check "an operator token from Keycloak is accepted; /v1/me needs a tenant (403)" eq "$(field operator_me)" 403
+check "an operator creates a tenant through identity, which provisions Keycloak (201)" eq "$(field create_tenant)" 201
+check "the new tenant is readable (200)" eq "$(field get_tenant)" 200
+
+# The database on RDS: identity's role is confined to its own database, and its migrations ran there.
+# shellcheck disable=SC2016
+db=$(in_cluster identity-db meterbook-dev "[$(secret_env DB_HOST database DB_HOST),$(secret_env DB_PORT database DB_PORT),$(secret_env PGPASSWORD identity-db password)]" '
+  export PGHOST=$DB_HOST PGPORT=$DB_PORT PGUSER=identity_dev PGSSLMODE=require PGCONNECT_TIMEOUT=10
+  echo "own=$(psql -d identity_dev -qtAc "select count(*) from identity.flyway_schema_history where success" 2>&1 | tail -n1)"
+  echo "other=$(psql -d keycloak_dev -qtAc "select 1" 2>&1 | grep -o "does not have CONNECT privilege" | head -n1)"
+')
+check "identity's migrations ran in identity_dev on RDS" test "$(sed -n 's/^own=//p' <<<"$db")" -ge 4
+check "identity's database role cannot connect to Keycloak's database" eq "$(sed -n 's/^other=//p' <<<"$db")" "does not have CONNECT privilege"
+
 echo
 echo "---"
 echo "$pass passed, $fail failed"
