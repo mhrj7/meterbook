@@ -28,7 +28,7 @@ class SigningCertificateTest {
 
   @Test
   void accepts_pem_and_returns_single_line_base64_der() {
-    String normalised = SigningCertificate.normalise(pem("idp-valid.pem"), NOW);
+    String normalised = SigningCertificate.normalise(pem("idp-valid.crt"), NOW);
 
     assertThat(normalised).doesNotContain("BEGIN", "\n", " ");
     assertThat(Base64.getDecoder().decode(normalised)).isNotEmpty();
@@ -36,7 +36,7 @@ class SigningCertificateTest {
 
   @Test
   void accepts_bare_base64_der_too() {
-    String once = SigningCertificate.normalise(pem("idp-valid.pem"), NOW);
+    String once = SigningCertificate.normalise(pem("idp-valid.crt"), NOW);
 
     assertThat(SigningCertificate.normalise(once, NOW)).isEqualTo(once);
   }
@@ -57,11 +57,11 @@ class SigningCertificateTest {
 
   @Test
   void rejects_expired_and_not_yet_valid_certificates() {
-    assertThatThrownBy(() -> SigningCertificate.normalise(pem("idp-expired.pem"), NOW))
+    assertThatThrownBy(() -> SigningCertificate.normalise(pem("idp-expired.crt"), NOW))
         .isInstanceOf(ApiException.class)
         .satisfies(e -> assertThat(((ApiException) e).code()).isEqualTo("certificate_expired"));
     Clock longAgo = Clock.fixed(Instant.parse("2001-01-01T00:00:00Z"), ZoneOffset.UTC);
-    assertThatThrownBy(() -> SigningCertificate.normalise(pem("idp-valid.pem"), longAgo))
+    assertThatThrownBy(() -> SigningCertificate.normalise(pem("idp-valid.crt"), longAgo))
         .satisfies(
             e -> assertThat(((ApiException) e).code()).isEqualTo("certificate_not_yet_valid"));
   }

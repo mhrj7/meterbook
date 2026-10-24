@@ -109,7 +109,7 @@ class KeycloakDirectoryTest {
     String certificate =
         new String(
                 KeycloakDirectoryTest.class
-                    .getResourceAsStream("/certs/idp-valid.pem")
+                    .getResourceAsStream("/certs/idp-valid.crt")
                     .readAllBytes(),
                 java.nio.charset.StandardCharsets.US_ASCII)
             .replace("-----BEGIN CERTIFICATE-----", "")

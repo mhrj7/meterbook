@@ -84,7 +84,7 @@ class SsoConnectionApiTest {
   }
 
   private static String validBody() {
-    return body("https://acme.okta.com/app/sso/saml", SigningCertificateTest.pem("idp-valid.pem"));
+    return body("https://acme.okta.com/app/sso/saml", SigningCertificateTest.pem("idp-valid.crt"));
   }
 
   private ResultActions create(CallerAuthentication caller, String key, String body)
@@ -179,16 +179,16 @@ class SsoConnectionApiTest {
 
   @Test
   void rejects_bad_certificates_and_plain_http() throws Exception {
-    create(admin, "c1", body("https://idp.test/sso", SigningCertificateTest.pem("idp-expired.pem")))
+    create(admin, "c1", body("https://idp.test/sso", SigningCertificateTest.pem("idp-expired.crt")))
         .andExpect(status().isUnprocessableContent())
         .andExpect(jsonPath("$.error.code").value("certificate_expired"))
         .andExpect(jsonPath("$.error.param").value("saml.signing_certificate"));
     create(admin, "c2", body("https://idp.test/sso", "x".repeat(200)))
         .andExpect(jsonPath("$.error.code").value("certificate_malformed"));
-    create(admin, "c3", body("http://idp.test/sso", SigningCertificateTest.pem("idp-valid.pem")))
+    create(admin, "c3", body("http://idp.test/sso", SigningCertificateTest.pem("idp-valid.crt")))
         .andExpect(status().isUnprocessableContent())
         .andExpect(jsonPath("$.error.code").value("sso_url_not_https"));
-    create(admin, "c4", body("ftp://idp.test/sso", SigningCertificateTest.pem("idp-valid.pem")))
+    create(admin, "c4", body("ftp://idp.test/sso", SigningCertificateTest.pem("idp-valid.crt")))
         .andExpect(jsonPath("$.error.param").value("saml.sso_url"));
     assertThat(directory.calls("createSamlProvider")).isZero();
   }
