@@ -1,6 +1,8 @@
 # Istio in ambient mode, once per cluster (ADR-0011): CRDs, istiod, the CNI agent and ztunnel, then strict mTLS and
 # the enrolled namespaces (platform-mesh). Charts from Istio's OCI registry; images from Google's Docker Hub mirror,
 # since Istio 1.31 publishes images to Docker Hub only and Docker Hub throttles anonymous pulls.
+# 1.31.3 is newer than our two-week rule allows: it is a security release (ISTIO-SECURITY-2026-008, after the
+# 1.31.2 security fixes), and staying on an older patch would keep known vulnerabilities in every node's ztunnel.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
