@@ -3,7 +3,7 @@
 - **Author(s):** Mohit Raj
 - **Status:** Approved
 - **Last updated:** 2026-10-23
-- **Tasks:** MB-T07 (this doc), MB-T08 (tenancy), MB-T09 (API keys), MB-T11 (RBAC, audit)
+- **Tasks:** MB-T07 (login, SSO, SCIM), MB-T08 (tenancy and row-level security), MB-T09 (API keys), MB-T11 (RBAC, audit)
 - **Reviewers:** —
 
 ## 1. Overview
@@ -20,9 +20,10 @@ tells other services who is calling (ADR-0007).
 - G2: A user deactivated over SCIM cannot sign in again, and their sessions end before the SCIM call returns.
 - G3: No request can read or change another tenant's connections, tokens, users or groups (isolation tests: 404).
 - G4: `GET /v1/me` p99 ≤ 50 ms in-cluster (token validated locally against cached JWKS).
+- G5 (MB-T08): tenants organise their work in projects, each with a live and a test environment; a cross-tenant read
+  fails closed even when the application forgets to filter (row-level security, ADR-0009).
 
 **Non-goals:**
-- NG1: Projects, environments and row-level security (MB-T08).
 - NG2: Fine-grained RBAC and the audit log (MB-T11); MB-T07 has two roles, `platform-admin` and `tenant-admin`.
 - NG3: API keys for machine access (MB-T09).
 - NG4: Proving domain ownership by DNS record (MB-T11). Until then only a platform admin can add a domain to a tenant.
@@ -45,6 +46,8 @@ they sign; most self-serve users sign in with a password.
 - FR5: SCIM 2.0 Users (create, get, list with `filter=userName eq "…"`, replace, patch, delete) and Groups (create,
   get, list, patch members, delete), plus `ServiceProviderConfig`, `ResourceTypes` and `Schemas`.
 - FR6: `GET /v1/me` returns the caller's user ID, tenant ID, email, name, roles and how they signed in.
+- FR7 (MB-T08): tenant admins create, rename and list projects; each new project gets `production` (live) and
+  `sandbox` (test) environments; admins add environments. Members read projects and environments.
 
 ### Non-functional
 | Requirement | Target | How measured |
@@ -106,7 +109,9 @@ Schema `identity` in the shared PostgreSQL instance, owned by the identity servi
 | `scim_tokens` | `id`, `tenant_id`, `token_hash` unique, `prefix`, `revoked_at`, `last_used_at` | token = `mbscim_` + 32 random bytes, base62 |
 | `scim_users` | `id`, `tenant_id`, `user_name`, `external_id`, `keycloak_user_id`, `active`, `version` | unique `(tenant_id, lower(user_name))` |
 | `scim_groups`, `scim_group_members` | `id`, `tenant_id`, `display_name`; `(group_id, user_id)` | |
-| `idempotency_keys` | `(tenant_id, key)` | stored response for 24 h |
+| `idempotency_keys` | `(scope, key)` | stored response for 24 h; scope is the caller's user ID |
+| `projects` (MB-T08) | `id`, `tenant_id`, `slug` unique per tenant, `name` | at most 100 per tenant |
+| `environments` (MB-T08) | `id`, `tenant_id`, `project_id`, `slug` unique per project, `kind` (`live`/`test`) | at most 20 per project |
 
 ### 7.3 Consistency, ordering and idempotency
 
@@ -123,8 +128,16 @@ Schema `identity` in the shared PostgreSQL instance, owned by the identity servi
 ### 7.4 Multi-tenancy and isolation
 
 The tenant comes only from the credential: the `organization` claim of a Keycloak token, or the tenant bound to a
-SCIM token. Every repository method takes a `TenantId` and every query filters on it; a resource of another tenant
-is 404. Isolation tests cover each endpoint. Row-level security as a second line arrives with MB-T08.
+SCIM token. Isolation has two independent layers (ADR-0009):
+
+1. **Application:** every repository method takes a `TenantId` and filters on it; another tenant's resource is 404.
+2. **Database:** every table with a `tenant_id` has row-level security enabled and forced. Each transaction states
+   its tenant (`TenantScope.inTenant`, which sets `app.tenant_id` for that transaction only); without it a query
+   returns nothing and an insert is refused. The few cross-tenant operations (SCIM token lookup, domain checks,
+   tenant creation, operator reads) run in `TenantScope.asPlatform(reason)`, accepted only by the tables they touch.
+
+The service connects as a role without `BYPASSRLS`, and so do the tests. A guard test fails if any table with a
+`tenant_id` column lacks forced RLS.
 
 ### 7.5 Failure modes
 
