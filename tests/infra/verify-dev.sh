@@ -137,10 +137,11 @@ deploy_ready() { [ "$(kubectl -n "$1" get deploy "$2" -o 'jsonpath={.status.avai
 
 check "ArgoCD server and controllers running" kubectl -n argocd rollout status deploy/argocd-server --timeout=300s
 
-for app in meterbook-dev-root meterbook-staging-root platform-external-secrets platform-secrets-dev platform-secrets-staging smoke-dev smoke-staging; do
+MESH_APPS="platform-istio-base platform-istiod platform-istio-cni platform-ztunnel platform-mesh"
+for app in meterbook-dev-root meterbook-staging-root $MESH_APPS platform-external-secrets platform-secrets-dev platform-secrets-staging smoke-dev smoke-staging; do
   if wait_until 900 app_synced "$app"; then ok "ArgoCD application $app Synced"; else bad "ArgoCD application $app Synced ($(app_field "$app" .status.sync.status))"; fi
 done
-for app in meterbook-dev-root meterbook-staging-root platform-external-secrets smoke-dev smoke-staging; do
+for app in meterbook-dev-root meterbook-staging-root $MESH_APPS platform-external-secrets smoke-dev smoke-staging; do
   if wait_until 600 app_healthy "$app"; then ok "ArgoCD application $app Healthy"; else bad "ArgoCD application $app Healthy ($(app_field "$app" .status.health.status))"; fi
 done
 
@@ -208,8 +209,8 @@ check "smoke pods run as non-root with a read-only root filesystem" bash -c "
   kubectl -n meterbook-dev get pods -l app.kubernetes.io/name=smoke -o jsonpath='{range .items[*]}{.spec.securityContext.runAsNonRoot} {.spec.containers[0].securityContext.readOnlyRootFilesystem}{\"\\n\"}{end}' \
     | grep -v '^true true$' | grep -q . && exit 1 || exit 0"
 
-probe() { # probe <namespace> <pod-name>: HTTP GET to the dev smoke service from a pod in <namespace>
-  kubectl -n "$1" run "$2" --image=busybox:1.37 --restart=Never --rm -i --quiet \
+probe() { # probe <namespace> <pod-name> [labels]: HTTP GET to the dev smoke service from a pod in <namespace>
+  kubectl -n "$1" run "$2" --image=busybox:1.37 --restart=Never --rm -i --quiet --labels="${3:-app=probe}" \
     --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
     -- wget -q -T 5 -O- http://smoke.meterbook-dev.svc.cluster.local/healthz
 }
@@ -223,6 +224,44 @@ if probe np-outsider np-denied >/dev/null 2>&1; then
   bad "NetworkPolicy: traffic from another namespace is blocked"
 else
   ok "NetworkPolicy: traffic from another namespace is blocked"
+fi
+
+# --- Service mesh (MB-T10, ADR-0011) -----------------------------------------------------------------------------
+# Istio ambient: ztunnel on every node carries enrolled pods' traffic over mTLS; strict mode rejects plaintext.
+NODES=$(kubectl get nodes --no-headers | wc -l | tr -d ' ')
+ds_ready() { [ "$(kubectl -n istio-system get ds "$1" -o 'jsonpath={.status.numberReady}')" = "$NODES" ]; }
+for ds in ztunnel istio-cni-node; do
+  if wait_until 300 ds_ready "$ds"; then ok "$ds ready on all $NODES nodes"; else bad "$ds ready on all $NODES nodes"; fi
+done
+check "istiod available" kubectl -n istio-system rollout status deploy/istiod --timeout=120s
+for ns in meterbook-dev meterbook-staging; do
+  check "$ns enrolled in the ambient mesh" eq \
+    "$(kubectl get namespace "$ns" -o 'jsonpath={.metadata.labels.istio\.io/dataplane-mode}')" ambient
+done
+check "mesh-wide PeerAuthentication is STRICT" eq \
+  "$(kubectl -n istio-system get peerauthentication default -o 'jsonpath={.spec.mtls.mode}')" STRICT
+# Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext.
+ztunnel_refused() { # the mesh, not some other failure, refused the plaintext client: ztunnel names the strict policy
+  kubectl -n istio-system logs -l app=ztunnel --all-containers --since=15m --tail=-1 2>/dev/null \
+    | grep -F 'src.workload="plaintext-client"' \
+    | grep -qF 'policy rejection: explicitly denied by: istio-system/istio_converted_static_strict'
+}
+if probe meterbook-dev plaintext-client istio.io/dataplane-mode=none >/dev/null 2>&1; then
+  bad "mesh: plaintext from a pod outside the mesh is rejected by strict mTLS, although the NetworkPolicy admits it"
+elif wait_until 60 ztunnel_refused; then
+  ok "mesh: plaintext from a pod outside the mesh is rejected by strict mTLS, although the NetworkPolicy admits it"
+else
+  bad "mesh: plaintext from a pod outside the mesh is rejected by strict mTLS (no policy rejection in ztunnel's log)"
+fi
+if probe meterbook-dev mesh-client >/dev/null 2>&1; then ok "mesh: an in-mesh client reaches smoke"; else bad "mesh: an in-mesh client reaches smoke"; fi
+ztunnel_saw() { # ztunnel_saw <destination workload prefix> <source service account path>
+  kubectl -n istio-system logs -l app=ztunnel --all-containers --since=15m --tail=-1 2>/dev/null \
+    | grep -F "dst.workload=\"$1" | grep -qF "src.identity=\"spiffe://cluster.local/ns/$2\""
+}
+if wait_until 60 ztunnel_saw smoke- meterbook-dev/sa/default; then
+  ok "mesh: ztunnel shows the request arriving over mTLS with the client's SPIFFE identity"
+else
+  bad "mesh: ztunnel shows the request arriving over mTLS with the client's SPIFFE identity"
 fi
 
 # --- Identity on EKS (MB-T07) ------------------------------------------------------------------------------------
@@ -292,6 +331,11 @@ check "/v1/api-key without credentials is refused (401)" eq "$(field key_anonymo
 check "/v1/api-key refuses an unknown key (401)" eq "$(field key_bogus)" 401
 check "an API key refusal is marked no-store, so no service caches it" eq "$(field key_bogus_cache)" no-store
 check "/v1/api-key refuses a person's access token: only keys verify there (401)" eq "$(field key_operator)" 401
+if wait_until 60 ztunnel_saw keycloak- meterbook-dev/sa/identity; then
+  ok "mesh: identity's calls to Keycloak travel over mTLS as spiffe://cluster.local/ns/meterbook-dev/sa/identity"
+else
+  bad "mesh: identity's calls to Keycloak travel over mTLS as spiffe://cluster.local/ns/meterbook-dev/sa/identity"
+fi
 
 # The database on RDS: identity's role is confined to its own database, its migrations ran there, and row-level
 # security (ADR-0009) holds for that role: without a tenant scope it sees none of the tenant created above.

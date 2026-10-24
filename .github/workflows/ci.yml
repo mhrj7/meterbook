@@ -200,7 +200,7 @@ jobs:
           # The service chart is linted with every service's values; other charts with their own values files.
           for values in deploy/services/*/*.yaml; do helm lint --strict infra/helm/meterbook-service -f "$values"; done
           helm dependency build infra/helm/identity-stack
-          for chart in infra/helm/platform-secrets infra/helm/identity-stack; do
+          for chart in infra/helm/platform-secrets infra/helm/platform-mesh infra/helm/identity-stack; do
             for values in "$chart"/values-*.yaml; do helm lint --strict "$chart" -f "$values"; done
           done
       - name: Render tests

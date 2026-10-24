@@ -1,6 +1,6 @@
-# Platform components (External Secrets Operator, the secrets chart). They install CRDs, cluster roles, webhooks and
-# the cluster-wide ClusterSecretStore, so this project may manage cluster-scoped resources. Only platform
-# Applications use it.
+# Platform components (External Secrets Operator, the secrets chart, the Istio mesh). They install CRDs, cluster
+# roles, webhooks, the cluster-wide ClusterSecretStore and mesh-wide PeerAuthentication, so this project may manage
+# cluster-scoped resources. Only platform Applications use it.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
@@ -13,9 +13,12 @@ spec:
   sourceRepos:
     - https://github.com/mhrj7/meterbook.git
     - https://charts.external-secrets.io
+    - ghcr.io/istio/release/charts
   destinations:
     - server: https://kubernetes.default.svc
       namespace: external-secrets
+    - server: https://kubernetes.default.svc
+      namespace: istio-system
     - server: https://kubernetes.default.svc
       namespace: meterbook-dev
     - server: https://kubernetes.default.svc

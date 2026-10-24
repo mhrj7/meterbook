@@ -10,7 +10,7 @@ install/argocd-values.yaml  ArgoCD chart values — used by Terraform and by the
 bootstrap/project.yaml   project for the roots only (ArgoCD objects in the argocd namespace) — created by Terraform
 roots/<env>.yaml         one root Application per environment, tracking main — created by Terraform
 projects/                platform (cluster components) and meterbook-apps (services, least privilege)
-envs/dev/                ESO, platform-secrets-dev, services ApplicationSet        → follows main
+envs/dev/                ESO, Istio ambient mesh, platform-secrets-dev, services   → follows main
 envs/staging/            platform-secrets-staging, services ApplicationSet          → follows main, self-heal
 envs/prod/               ESO, platform-secrets-prod, services ApplicationSet        → pinned to one commit SHA
 ```

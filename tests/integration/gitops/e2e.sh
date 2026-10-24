@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end test for the GitOps layout (MB-T06, ADR-0006) on a disposable cluster (kind):
 # installs ArgoCD, applies the projects and the dev/staging Applications pinned to the commit under test, and checks
-# that everything syncs, the smoke service runs hardened, and its NetworkPolicy is enforced.
+# that everything syncs, the smoke service runs hardened, its NetworkPolicy is enforced, and the ambient mesh rejects
+# plaintext between pods (MB-T10, ADR-0011).
 #   GITOPS_REVISION=<commit on GitHub> tests/integration/gitops/e2e.sh
 # Requires kubectl and helm, a throwaway kube context, and the commit to be pushed to the public repository.
 set -euo pipefail
@@ -72,12 +73,13 @@ done | kubectl apply -f - >/dev/null
 ok "dev and staging Applications and ApplicationSets created"
 
 step "1. Everything syncs from Git"
-for app in platform-external-secrets platform-secrets-dev platform-secrets-staging smoke-dev smoke-staging; do
+MESH_APPS="platform-istio-base platform-istiod platform-istio-cni platform-ztunnel platform-mesh"
+for app in $MESH_APPS platform-external-secrets platform-secrets-dev platform-secrets-staging smoke-dev smoke-staging; do
   wait_until 600 "$app to be generated" kubectl -n argocd get application "$app"
   wait_until 600 "$app Synced" app_synced "$app"
   ok "$app Synced at $REV"
 done
-for app in platform-external-secrets smoke-dev smoke-staging; do
+for app in $MESH_APPS platform-external-secrets smoke-dev smoke-staging; do
   wait_until 600 "$app Healthy" app_healthy "$app"
   ok "$app Healthy"
 done
@@ -99,8 +101,8 @@ if grep -qv '^true true false$' <<<"$pods"; then die "smoke pods are not hardene
 ok "smoke pods: non-root, read-only root filesystem, no privilege escalation"
 
 step "3. NetworkPolicy is enforced"
-probe() {
-  kubectl -n "$1" run "$2" --image=busybox:1.37 --restart=Never --rm -i --quiet \
+probe() { # probe <namespace> <pod-name> [labels]
+  kubectl -n "$1" run "$2" --image=busybox:1.37 --restart=Never --rm -i --quiet --labels="${3:-app=probe}" \
     --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
     -- wget -q -T 5 -O- http://smoke.meterbook-dev.svc.cluster.local/healthz
 }
@@ -110,7 +112,33 @@ kubectl create namespace np-outsider --dry-run=client -o yaml | kubectl apply -f
 if probe np-outsider np-denied >/dev/null 2>&1; then die "request from another namespace reached smoke"; fi
 ok "request from another namespace blocked"
 
-step "4. Drift is reverted in staging (self-heal)"
+step "4. Plaintext between pods is rejected (ambient mesh, strict mTLS)"
+for ns in meterbook-dev meterbook-staging; do
+  [ "$(kubectl get namespace "$ns" -o 'jsonpath={.metadata.labels.istio\.io/dataplane-mode}')" = ambient ] \
+    || die "$ns is not enrolled in the mesh"
+done
+ok "meterbook-dev and meterbook-staging enrolled in the ambient mesh"
+[ "$(kubectl -n istio-system get peerauthentication default -o 'jsonpath={.spec.mtls.mode}')" = STRICT ] \
+  || die "mesh-wide PeerAuthentication is not STRICT"
+ok "mesh-wide PeerAuthentication STRICT"
+# Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext.
+if probe meterbook-dev plaintext-client istio.io/dataplane-mode=none >/dev/null 2>&1; then
+  die "a plaintext client reached smoke despite strict mTLS"
+fi
+# It must be the mesh that refused it, not some other failure: ztunnel names the strict policy.
+wait_until 60 "ztunnel to log the refused plaintext connection" bash -c \
+  "kubectl -n istio-system logs -l app=ztunnel --since=5m --tail=-1 2>/dev/null | grep -F 'src.workload=\"plaintext-client\"' \
+     | grep -qF 'policy rejection: explicitly denied by: istio-system/istio_converted_static_strict'"
+ok "plaintext request from a pod outside the mesh rejected by strict mTLS, although the NetworkPolicy admits it"
+probe meterbook-dev mesh-client >/dev/null || die "an in-mesh client could not reach smoke"
+ok "in-mesh request to smoke succeeds"
+# ztunnel logs every connection it terminates with the peer's verified identity: proof the request went over mTLS.
+wait_until 60 "ztunnel to log the mTLS connection" bash -c \
+  "kubectl -n istio-system logs -l app=ztunnel --since=5m --tail=-1 2>/dev/null | grep -F 'dst.workload=\"smoke-' \
+     | grep -qF 'src.identity=\"spiffe://cluster.local/ns/meterbook-dev/sa/default\"'"
+ok "ztunnel shows the request arriving over mTLS with the client's SPIFFE identity"
+
+step "5. Drift is reverted in staging (self-heal)"
 kubectl -n meterbook-staging scale deploy smoke --replicas=1 >/dev/null
 wait_until 180 "staging smoke restored to 2 replicas" deploy_ready meterbook-staging smoke 2
 ok "manual change in staging reverted by ArgoCD"

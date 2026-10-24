@@ -1,0 +1,4 @@
+# The dev cluster hosts the dev and staging environments.
+namespaces:
+  - meterbook-dev
+  - meterbook-staging

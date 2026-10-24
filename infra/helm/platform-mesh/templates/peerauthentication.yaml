@@ -1,0 +1,12 @@
+{{- /*
+Mesh-wide strict mTLS: an enrolled workload accepts only mutually authenticated mesh traffic, so plaintext is
+rejected even where a NetworkPolicy would let it through.
+*/}}
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: {{ .Values.rootNamespace }}
+spec:
+  mtls:
+    mode: STRICT

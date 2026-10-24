@@ -226,8 +226,11 @@ spec:
 {{- end }}
 
 {{/*
-Ingress is denied except from the same namespace and any namespaces listed explicitly.
-Egress stays open for now (DNS, AWS APIs); egress policy follows with the service mesh (MB-T10).
+Ingress is denied except from the same namespace and any namespaces listed explicitly. Egress stays open for now
+(DNS, AWS APIs).
+In the ambient mesh (ADR-0011) traffic from those peers arrives over mTLS on port 15008 (HBONE), and kubelet probes
+come from the link-local address Istio rewrites them to; both are allowed. Strict mTLS rejects any plaintext the
+policy lets through.
 */}}
 {{- define "meterbook-lib.networkpolicy" -}}
 {{- if .Values.networkPolicy.enabled }}
@@ -246,6 +249,8 @@ spec:
     - ports:
         - port: http
           protocol: TCP
+        - port: 15008
+          protocol: TCP
       from:
         - podSelector: {}
         {{- range .Values.networkPolicy.allowFromNamespaces }}
@@ -253,5 +258,8 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . }}
         {{- end }}
+    - from:
+        - ipBlock:
+            cidr: 169.254.7.127/32
 {{- end }}
 {{- end }}

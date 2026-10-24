@@ -16,3 +16,4 @@ to this index.
 | [0008](0008-java-service-stack.md) | Java service stack: Java 25, Spring Boot 4.1, Gradle 9, jOOQ and Flyway | Accepted | MB-T07 |
 | [0009](0009-tenancy-and-row-level-security.md) | Tenant hierarchy (tenant > project > environment) and PostgreSQL row-level security | Accepted | MB-T08 |
 | [0010](0010-api-keys.md) | Environment-scoped API keys, hashed at rest, verified by the identity service | Accepted | MB-T09 |
+| [0011](0011-service-mesh-mtls.md) | Service mesh mTLS with Istio in ambient mode, strict mesh-wide | Accepted | MB-T10 |
