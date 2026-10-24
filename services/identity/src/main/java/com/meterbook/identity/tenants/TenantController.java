@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.net.URI;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
@@ -36,11 +38,19 @@ public class TenantController {
                           "^(?=.{1,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,63}$")
                   String>
               domains,
-      @NotBlank @Email @Size(max = 254) String initialAdminEmail) {}
+      @NotBlank @Email @Size(max = 254) String initialAdminEmail) {
+    public CreateTenant {
+      domains = domains == null ? null : Collections.unmodifiableList(new ArrayList<>(domains));
+    }
+  }
 
   /** Response body. */
   public record Tenant(
       UUID id, String name, String slug, List<String> domains, OffsetDateTime createdAt) {
+    public Tenant {
+      domains = List.copyOf(domains);
+    }
+
     static Tenant of(TenantRepository.Tenant t) {
       return new Tenant(t.id(), t.name(), t.slug(), t.domains(), t.createdAt());
     }

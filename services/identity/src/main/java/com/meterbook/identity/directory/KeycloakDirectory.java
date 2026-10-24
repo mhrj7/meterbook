@@ -348,6 +348,10 @@ public final class KeycloakDirectory implements Directory {
                   .headers(this::bearer)
                   .retrieve()
                   .body(JsonNode.class);
+          if (current == null) {
+            throw new IllegalStateException(
+                "Keycloak returned no body for organization " + organization);
+          }
           ObjectNode updated = (ObjectNode) current.deepCopy();
           for (JsonNode domain : updated.withArray("domains")) {
             ((ObjectNode) domain).put("identityProviderAlias", alias).put("autoRedirect", true);

@@ -7,7 +7,11 @@ import java.util.function.Function;
 public final class Pages {
 
   /** A page of results and the cursor for the next one. */
-  public record Page<T>(List<T> data, boolean hasMore, String nextCursor) {}
+  public record Page<T>(List<T> data, boolean hasMore, String nextCursor) {
+    public Page {
+      data = List.copyOf(data);
+    }
+  }
 
   private Pages() {}
 

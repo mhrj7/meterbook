@@ -69,7 +69,11 @@ public class SsoConnectionController {
   }
 
   /** A page. */
-  public record SsoConnectionList(List<SsoConnection> data, boolean hasMore, String nextCursor) {}
+  public record SsoConnectionList(List<SsoConnection> data, boolean hasMore, String nextCursor) {
+    public SsoConnectionList {
+      data = List.copyOf(data);
+    }
+  }
 
   private final SsoConnectionService connections;
   private final Idempotency idempotency;

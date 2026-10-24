@@ -13,6 +13,8 @@ import jakarta.validation.constraints.Size;
 import java.net.URI;
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,7 +43,11 @@ public class ApiKeyController {
   public record CreateApiKey(
       @NotBlank @Size(max = 200) String name,
       @NotEmpty List<@NotNull String> scopes,
-      OffsetDateTime expiresAt) {}
+      OffsetDateTime expiresAt) {
+    public CreateApiKey {
+      scopes = scopes == null ? null : Collections.unmodifiableList(new ArrayList<>(scopes));
+    }
+  }
 
   /** Request body of rotation. */
   public record RotateApiKey(@Min(0) @Max(604800) Integer gracePeriodSeconds) {}
@@ -59,6 +65,10 @@ public class ApiKeyController {
       OffsetDateTime expiresAt,
       OffsetDateTime lastUsedAt,
       UUID rotatedTo) {
+    public ApiKey {
+      scopes = List.copyOf(scopes);
+    }
+
     static ApiKey of(ApiKeys.Key k) {
       return new ApiKey(
           k.id(),
@@ -87,6 +97,10 @@ public class ApiKeyController {
       OffsetDateTime createdAt,
       OffsetDateTime expiresAt,
       String secret) {
+    public ApiKeyWithSecret {
+      scopes = List.copyOf(scopes);
+    }
+
     static ApiKeyWithSecret of(ApiKeys.Issued issued) {
       var k = issued.key();
       return new ApiKeyWithSecret(
@@ -104,7 +118,11 @@ public class ApiKeyController {
   }
 
   /** A page. */
-  public record ApiKeyList(List<ApiKey> data, boolean hasMore, String nextCursor) {}
+  public record ApiKeyList(List<ApiKey> data, boolean hasMore, String nextCursor) {
+    public ApiKeyList {
+      data = List.copyOf(data);
+    }
+  }
 
   /** What the presenting key is and may do. */
   public record CurrentApiKey(
@@ -114,7 +132,11 @@ public class ApiKeyController {
       UUID environmentId,
       String kind,
       List<String> scopes,
-      OffsetDateTime expiresAt) {}
+      OffsetDateTime expiresAt) {
+    public CurrentApiKey {
+      scopes = List.copyOf(scopes);
+    }
+  }
 
   private final ApiKeys keys;
   private final Idempotency idempotency;

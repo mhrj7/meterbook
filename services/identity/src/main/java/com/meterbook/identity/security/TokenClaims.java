@@ -70,9 +70,12 @@ final class TokenClaims {
   }
 
   static UUID subject(String sub) {
+    if (sub == null) {
+      throw invalid("the token subject is not a user id");
+    }
     try {
       return UUID.fromString(sub);
-    } catch (IllegalArgumentException | NullPointerException e) {
+    } catch (IllegalArgumentException e) {
       throw invalid("the token subject is not a user id");
     }
   }

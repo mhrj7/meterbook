@@ -72,7 +72,11 @@ public class ApiKeys {
       OffsetDateTime createdAt,
       OffsetDateTime expiresAt,
       OffsetDateTime lastUsedAt,
-      UUID rotatedTo) {}
+      UUID rotatedTo) {
+    public Key {
+      scopes = List.copyOf(scopes);
+    }
+  }
 
   /** A newly created key with its secret. */
   public record Issued(Key key, String secret) {}
@@ -85,7 +89,11 @@ public class ApiKeys {
       UUID environmentId,
       String kind,
       List<String> scopes,
-      OffsetDateTime expiresAt) {}
+      OffsetDateTime expiresAt) {
+    public Holder {
+      scopes = List.copyOf(scopes);
+    }
+  }
 
   private final DSLContext db;
   private final TenantScope scope;
@@ -295,7 +303,8 @@ public class ApiKeys {
             .set(API_KEYS.CREATED_AT, now)
             .set(API_KEYS.EXPIRES_AT, expiresAt)
             .returning()
-            .fetchOne();
+            .fetchOptional()
+            .orElseThrow(() -> new IllegalStateException("INSERT ... RETURNING returned no row"));
     return new Issued(key(record), secret);
   }
 

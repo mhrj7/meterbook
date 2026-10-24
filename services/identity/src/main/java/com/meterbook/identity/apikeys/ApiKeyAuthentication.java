@@ -40,4 +40,12 @@ public final class ApiKeyAuthentication extends AbstractAuthenticationToken {
   public int hashCode() {
     return holder.hashCode();
   }
+
+  /**
+   * Sessions are stateless: an authentication is never serialized, so refuse to rebuild one without
+   * its fields.
+   */
+  private void readObject(java.io.ObjectInputStream in) throws java.io.NotSerializableException {
+    throw new java.io.NotSerializableException(getClass().getName());
+  }
 }

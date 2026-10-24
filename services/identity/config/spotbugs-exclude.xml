@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- What SpotBugs does not report, and why. Every entry is narrow: one pattern, one place or one kind of field. -->
+<FindBugsFilter>
+  <!-- Classes jOOQ generates from the migrations. -->
+  <Match>
+    <Package name="~com\.meterbook\.identity\.db(\..*)?"/>
+  </Match>
+  <!-- Constructor injection: Spring hands each bean its shared collaborators (other beans, jOOQ's DSLContext, the
+       clock, the JSON mapper, the random source), so "storing an externally mutable object" is the design. Bean types are listed one
+       by one (SpotBugs matches field types exactly): a new one shows up as a finding first. Lists,
+       maps and arrays are not covered: records copy those (compact constructors). -->
+  <Match>
+    <Bug pattern="EI_EXPOSE_REP2"/>
+    <Or>
+      <Field type="com.meterbook.identity.apikeys.ApiKeys"/>
+      <Field type="com.meterbook.identity.directory.Directory"/>
+      <Field type="com.meterbook.identity.idempotency.Idempotency"/>
+      <Field type="com.meterbook.identity.idempotency.IdempotencyStore"/>
+      <Field type="com.meterbook.identity.projects.Projects"/>
+      <Field type="com.meterbook.identity.scim.ScimGroups"/>
+      <Field type="com.meterbook.identity.scim.ScimUsers"/>
+      <Field type="com.meterbook.identity.sso.SsoConnectionRepository"/>
+      <Field type="com.meterbook.identity.sso.SsoConnectionService"/>
+      <Field type="com.meterbook.identity.tenancy.TenantScope"/>
+      <Field type="com.meterbook.identity.tenants.TenantRepository"/>
+      <Field type="org.jooq.DSLContext"/>
+      <Field type="java.time.Clock"/>
+      <Field type="java.security.SecureRandom"/>
+      <Field type="tools.jackson.databind.json.JsonMapper"/>
+      <Field type="org.springframework.transaction.support.TransactionTemplate"/>
+    </Or>
+  </Match>
+  <!-- The client's Request-Id is echoed only after RequestIds.isValid accepts it (fixed prefix, 26 base32
+       characters), so it cannot carry CR/LF; ApiSecurityTest sends a header-injection attempt and gets a fresh ID. -->
+  <Match>
+    <Class name="com.meterbook.identity.web.RequestIdFilter"/>
+    <Method name="doFilterInternal"/>
+    <Bug pattern="HRS_REQUEST_PARAMETER_TO_HTTP_HEADER"/>
+  </Match>
+</FindBugsFilter>

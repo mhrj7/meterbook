@@ -45,7 +45,11 @@ public class ScimTokenController {
       UUID id, String description, String prefix, OffsetDateTime createdAt, String secret) {}
 
   /** A page. */
-  public record ScimTokenList(List<ScimToken> data, boolean hasMore, String nextCursor) {}
+  public record ScimTokenList(List<ScimToken> data, boolean hasMore, String nextCursor) {
+    public ScimTokenList {
+      data = List.copyOf(data);
+    }
+  }
 
   private final ScimTokens tokens;
   private final Idempotency idempotency;
