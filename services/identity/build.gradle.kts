@@ -83,6 +83,10 @@ jooq {
                 isDeprecated = false
                 isRecords = true
                 isFluentSetters = false
+                // Queries name their joins; navigation methods would also clash on self-references
+                // (api_keys.rotated_to).
+                isImplicitJoinPathsToMany = false
+                isImplicitJoinPathsToOne = false
             }
             target {
                 packageName = "com.meterbook.identity.db"
