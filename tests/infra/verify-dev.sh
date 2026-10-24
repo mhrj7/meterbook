@@ -269,6 +269,7 @@ api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycl
     -d "$(jq -cn --arg s "$SLUG" "{name: \"Verify\", slug: \$s, domains: [\"\(\$s).test\"], initial_admin_email: \"admin@\(\$s).test\"}")")
   echo "create_tenant=$(tail -n1 <<<"$created")"
   tenant=$(head -n1 <<<"$created" | jq -r .id)
+  echo "tenant_id=$tenant"
   echo "get_tenant=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$id/v1/tenants/$tenant")"
 ')
 field() { sed -n "s/^$1=//p" <<<"$api"; }
@@ -277,15 +278,32 @@ check "an operator token from Keycloak is accepted; /v1/me needs a tenant (403)"
 check "an operator creates a tenant through identity, which provisions Keycloak (201)" eq "$(field create_tenant)" 201
 check "the new tenant is readable (200)" eq "$(field get_tenant)" 200
 
-# The database on RDS: identity's role is confined to its own database, and its migrations ran there.
+# The database on RDS: identity's role is confined to its own database, its migrations ran there, and row-level
+# security (ADR-0009) holds for that role: without a tenant scope it sees none of the tenant created above.
 # shellcheck disable=SC2016
-db=$(in_cluster identity-db meterbook-dev "[$(secret_env DB_HOST database DB_HOST),$(secret_env DB_PORT database DB_PORT),$(secret_env PGPASSWORD identity-db password)]" '
-  export PGHOST=$DB_HOST PGPORT=$DB_PORT PGUSER=identity_dev PGSSLMODE=require PGCONNECT_TIMEOUT=10
-  echo "own=$(psql -d identity_dev -qtAc "select count(*) from identity.flyway_schema_history where success" 2>&1 | tail -n1)"
+db=$(in_cluster identity-db meterbook-dev "[$(secret_env DB_HOST database DB_HOST),$(secret_env DB_PORT database DB_PORT),$(secret_env PGPASSWORD identity-db password),{\"name\":\"TENANT\",\"value\":\"$(field tenant_id)\"}]" '
+  export PGHOST=$DB_HOST PGPORT=$DB_PORT PGUSER=identity_dev PGSSLMODE=require PGCONNECT_TIMEOUT=10 PGDATABASE=identity_dev
+  q() { psql -qtAc "$1" 2>&1 | tail -n1; }
+  echo "own=$(q "select count(*) from identity.flyway_schema_history where success")"
   echo "other=$(psql -d keycloak_dev -qtAc "select 1" 2>&1 | grep -o "does not have CONNECT privilege" | head -n1)"
+  echo "bypass=$(q "select rolsuper or rolbypassrls from pg_roles where rolname = current_user")"
+  echo "unforced=$(q "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = '\''identity'\'' and c.relkind = '\''r'\''
+      and c.relname not in ('\''flyway_schema_history'\'', '\''idempotency_keys'\'')
+      and not (c.relrowsecurity and c.relforcerowsecurity)")"
+  echo "unscoped=$(q "select count(*) from identity.tenants")"
+  echo "unscoped_insert=$(psql -qtAc "insert into identity.projects values (gen_random_uuid(), '\''$TENANT'\'', '\''x'\'', '\''x'\'', now())" 2>&1 | grep -o "row-level security" | head -n1)"
+  echo "scoped=$(psql -qtA -c "begin" -c "select set_config('\''app.tenant_id'\'', '\''$TENANT'\'', true)" \
+    -c "select count(*) from identity.tenants" -c "commit" 2>&1 | sed -n 2p)"
 ')
-check "identity's migrations ran in identity_dev on RDS" test "$(sed -n 's/^own=//p' <<<"$db")" -ge 4
-check "identity's database role cannot connect to Keycloak's database" eq "$(sed -n 's/^other=//p' <<<"$db")" "does not have CONNECT privilege"
+dbf() { sed -n "s/^$1=//p" <<<"$db"; }
+check "identity's migrations ran in identity_dev on RDS" test "$(dbf own)" -ge 5
+check "identity's database role cannot connect to Keycloak's database" eq "$(dbf other)" "does not have CONNECT privilege"
+check "identity's database role is no superuser and cannot bypass row-level security" eq "$(dbf bypass)" f
+check "every identity table holding tenant data forces row-level security" eq "$(dbf unforced)" 0
+check "without a tenant scope the new tenant is invisible (fails closed)" eq "$(dbf unscoped)" 0
+check "without a tenant scope an insert is refused by row-level security" eq "$(dbf unscoped_insert)" "row-level security"
+check "in the tenant's own scope the tenant is visible" eq "$(dbf scoped)" 1
 
 echo
 echo "---"
