@@ -140,7 +140,7 @@ jobs:
           echo "Signed ${IMAGE}@${DIGEST}" >> "$GITHUB_STEP_SUMMARY"
 
   resign:
-    name: Re-sign ${{ inputs.service }}@${{ inputs.digest }}
+    name: Re-sign (manual, main only)
     # Only images this workflow built on main, and only from main: the signature must name container.yml on main.
     if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
