@@ -69,6 +69,11 @@ jooq {
                         key = "defaultNameCase"
                         value = "lower"
                     }
+                    // Policies, functions and data fixes are PostgreSQL-only; the code generator skips them.
+                    property {
+                        key = "parseIgnoreComments"
+                        value = "true"
+                    }
                 }
                 inputSchema = "PUBLIC"
                 outputSchemaToDefault = true

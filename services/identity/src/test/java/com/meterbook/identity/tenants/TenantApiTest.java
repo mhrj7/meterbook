@@ -15,6 +15,7 @@ import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
 import com.meterbook.identity.support.FakeDirectory;
 import com.meterbook.identity.support.TestDatabase;
+import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -49,6 +50,7 @@ class TenantApiTest {
   @Autowired MockMvc mvc;
   @Autowired FakeDirectory directory;
   @Autowired DSLContext db;
+  @Autowired TenantScope scope;
   @Autowired JsonMapper json;
 
   private final CallerAuthentication operator = TestCallers.platformAdmin(UUID.randomUUID());
@@ -74,6 +76,10 @@ class TenantApiTest {
             .header("Idempotency-Key", key)
             .contentType("application/json")
             .content(body));
+  }
+
+  private boolean platform(org.jooq.Condition condition) {
+    return scope.asPlatform("test assertion", () -> db.fetchExists(Tables.TENANTS, condition));
   }
 
   private ResultActions createAcme() throws Exception {
@@ -104,7 +110,7 @@ class TenantApiTest {
     UUID admin = directory.findUserByEmail("ada@acme-" + suffix + ".test").orElseThrow();
     assertThat(directory.members.get(admin)).containsExactly(id);
     assertThat(directory.roles.get(admin)).containsExactly(Role.TENANT_ADMIN.claimValue());
-    assertThat(db.fetchExists(Tables.TENANTS, Tables.TENANTS.ID.eq(id))).isTrue();
+    assertThat(platform(Tables.TENANTS.ID.eq(id))).isTrue();
   }
 
   @Test
@@ -224,7 +230,7 @@ class TenantApiTest {
 
     assertThat(directory.organizations).isEmpty();
     assertThat(directory.users).isEmpty();
-    assertThat(db.fetchExists(Tables.TENANTS, Tables.TENANTS.SLUG.eq("acme-" + suffix))).isFalse();
+    assertThat(platform(Tables.TENANTS.SLUG.eq("acme-" + suffix))).isFalse();
 
     directory.reset();
     create(operator, "outage", body).andExpect(status().isCreated());
@@ -246,12 +252,15 @@ class TenantApiTest {
     directory.onCall(
         "grantRealmRole",
         () ->
-            db.insertInto(Tables.TENANTS)
-                .set(Tables.TENANTS.ID, UUID.randomUUID())
-                .set(Tables.TENANTS.SLUG, slug)
-                .set(Tables.TENANTS.NAME, "racer")
-                .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
-                .execute());
+            scope.asPlatform(
+                "a concurrent tenant signup",
+                () ->
+                    db.insertInto(Tables.TENANTS)
+                        .set(Tables.TENANTS.ID, UUID.randomUUID())
+                        .set(Tables.TENANTS.SLUG, slug)
+                        .set(Tables.TENANTS.NAME, "racer")
+                        .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
+                        .execute()));
 
     create(operator, "race", body(slug, slug + ".test", "ada@" + slug + ".test"))
         .andExpect(status().isConflict())

@@ -16,6 +16,7 @@ import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
 import com.meterbook.identity.support.FakeDirectory;
 import com.meterbook.identity.support.TestDatabase;
+import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -54,6 +55,7 @@ class SsoConnectionApiTest {
   @Autowired MockMvc mvc;
   @Autowired FakeDirectory directory;
   @Autowired DSLContext db;
+  @Autowired TenantScope scope;
   @Autowired JsonMapper json;
 
   private UUID tenant;
@@ -68,12 +70,15 @@ class SsoConnectionApiTest {
 
   private UUID newTenant() {
     UUID id = UUID.randomUUID();
-    db.insertInto(Tables.TENANTS)
-        .set(Tables.TENANTS.ID, id)
-        .set(Tables.TENANTS.SLUG, "t-" + id.toString().substring(0, 8))
-        .set(Tables.TENANTS.NAME, "Tenant")
-        .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
-        .execute();
+    scope.inTenant(
+        id,
+        () ->
+            db.insertInto(Tables.TENANTS)
+                .set(Tables.TENANTS.ID, id)
+                .set(Tables.TENANTS.SLUG, "t-" + id.toString().substring(0, 8))
+                .set(Tables.TENANTS.NAME, "Tenant")
+                .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
+                .execute());
     return id;
   }
 
@@ -203,7 +208,12 @@ class SsoConnectionApiTest {
 
     assertThat(directory.providers).isEmpty();
     assertThat(directory.calls("deleteIdentityProvider")).isEqualTo(1);
-    assertThat(db.fetchExists(Tables.SSO_CONNECTIONS, Tables.SSO_CONNECTIONS.TENANT_ID.eq(tenant)))
+    assertThat(
+            scope.inTenant(
+                tenant,
+                () ->
+                    db.fetchExists(
+                        Tables.SSO_CONNECTIONS, Tables.SSO_CONNECTIONS.TENANT_ID.eq(tenant))))
         .isFalse();
   }
 
@@ -212,16 +222,20 @@ class SsoConnectionApiTest {
     directory.onCall(
         "createSamlProvider",
         () ->
-            db.insertInto(Tables.SSO_CONNECTIONS)
-                .set(Tables.SSO_CONNECTIONS.ID, UUID.randomUUID())
-                .set(Tables.SSO_CONNECTIONS.TENANT_ID, tenant)
-                .set(Tables.SSO_CONNECTIONS.KEYCLOAK_ALIAS, "sso-racer-" + UUID.randomUUID())
-                .set(Tables.SSO_CONNECTIONS.PROTOCOL, "saml")
-                .set(Tables.SSO_CONNECTIONS.DISPLAY_NAME, "racer")
-                .set(Tables.SSO_CONNECTIONS.IDP_ENTITY_ID, "x")
-                .set(Tables.SSO_CONNECTIONS.SSO_URL, "https://x")
-                .set(Tables.SSO_CONNECTIONS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
-                .execute());
+            scope.inTenant(
+                tenant,
+                () ->
+                    db.insertInto(Tables.SSO_CONNECTIONS)
+                        .set(Tables.SSO_CONNECTIONS.ID, UUID.randomUUID())
+                        .set(Tables.SSO_CONNECTIONS.TENANT_ID, tenant)
+                        .set(
+                            Tables.SSO_CONNECTIONS.KEYCLOAK_ALIAS, "sso-racer-" + UUID.randomUUID())
+                        .set(Tables.SSO_CONNECTIONS.PROTOCOL, "saml")
+                        .set(Tables.SSO_CONNECTIONS.DISPLAY_NAME, "racer")
+                        .set(Tables.SSO_CONNECTIONS.IDP_ENTITY_ID, "x")
+                        .set(Tables.SSO_CONNECTIONS.SSO_URL, "https://x")
+                        .set(Tables.SSO_CONNECTIONS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
+                        .execute()));
 
     create(admin, "race", validBody()).andExpect(status().isConflict());
     assertThat(directory.providers).isEmpty();

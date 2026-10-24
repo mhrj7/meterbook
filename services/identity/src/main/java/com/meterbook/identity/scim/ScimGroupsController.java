@@ -41,7 +41,7 @@ public class ScimGroupsController {
     return ResponseEntity.created(URI.create("/scim/v2/Groups/" + group.id()))
         .contentType(SCIM)
         .header(HttpHeaders.ETAG, group.etag())
-        .body(groups.toJson(group));
+        .body(groups.toJson(auth.tenantId(), group));
   }
 
   @GetMapping("/{id}")
@@ -50,7 +50,7 @@ public class ScimGroupsController {
     return ResponseEntity.ok()
         .contentType(SCIM)
         .header(HttpHeaders.ETAG, group.etag())
-        .body(groups.toJson(group));
+        .body(groups.toJson(auth.tenantId(), group));
   }
 
   @GetMapping
@@ -63,7 +63,8 @@ public class ScimGroupsController {
     int size = Math.clamp(count, 0, ScimDiscoveryController.MAX_RESULTS);
     var page =
         groups.list(auth.tenantId(), ScimFilter.parse(filter, ScimGroups.FILTERABLE), start, size);
-    List<ObjectNode> resources = page.getValue().stream().map(groups::toJson).toList();
+    List<ObjectNode> resources =
+        page.getValue().stream().map(g -> groups.toJson(auth.tenantId(), g)).toList();
     return ResponseEntity.ok()
         .contentType(SCIM)
         .body(
@@ -85,7 +86,7 @@ public class ScimGroupsController {
     return ResponseEntity.ok()
         .contentType(SCIM)
         .header(HttpHeaders.ETAG, group.etag())
-        .body(groups.toJson(group));
+        .body(groups.toJson(auth.tenantId(), group));
   }
 
   @DeleteMapping("/{id}")

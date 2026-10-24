@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.meterbook.identity.support.TestDatabase;
+import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 import org.jooq.DSLContext;
@@ -19,15 +20,23 @@ import org.springframework.dao.DataIntegrityViolationException;
 class MigrationTest {
 
   @Autowired DSLContext db;
+  @Autowired TenantScope scope;
+
+  /** Schema constraints are checked below RLS, so these tests act with platform scope. */
+  private <T> T platform(java.util.function.Supplier<T> work) {
+    return scope.asPlatform("schema test", work);
+  }
 
   private UUID tenant(String slug) {
     UUID id = UUID.randomUUID();
-    db.insertInto(Tables.TENANTS)
-        .set(Tables.TENANTS.ID, id)
-        .set(Tables.TENANTS.SLUG, slug)
-        .set(Tables.TENANTS.NAME, slug)
-        .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(java.time.ZoneOffset.UTC))
-        .execute();
+    platform(
+        () ->
+            db.insertInto(Tables.TENANTS)
+                .set(Tables.TENANTS.ID, id)
+                .set(Tables.TENANTS.SLUG, slug)
+                .set(Tables.TENANTS.NAME, slug)
+                .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(java.time.ZoneOffset.UTC))
+                .execute());
     return id;
   }
 
@@ -45,17 +54,21 @@ class MigrationTest {
     UUID a = tenant("dom-a-" + UUID.randomUUID().toString().substring(0, 8));
     UUID b = tenant("dom-b-" + UUID.randomUUID().toString().substring(0, 8));
     String domain = UUID.randomUUID() + ".test";
-    db.insertInto(Tables.TENANT_DOMAINS)
-        .set(Tables.TENANT_DOMAINS.DOMAIN, domain)
-        .set(Tables.TENANT_DOMAINS.TENANT_ID, a)
-        .execute();
+    platform(
+        () ->
+            db.insertInto(Tables.TENANT_DOMAINS)
+                .set(Tables.TENANT_DOMAINS.DOMAIN, domain)
+                .set(Tables.TENANT_DOMAINS.TENANT_ID, a)
+                .execute());
 
     assertThatThrownBy(
             () ->
-                db.insertInto(Tables.TENANT_DOMAINS)
-                    .set(Tables.TENANT_DOMAINS.DOMAIN, domain)
-                    .set(Tables.TENANT_DOMAINS.TENANT_ID, b)
-                    .execute())
+                platform(
+                    () ->
+                        db.insertInto(Tables.TENANT_DOMAINS)
+                            .set(Tables.TENANT_DOMAINS.DOMAIN, domain)
+                            .set(Tables.TENANT_DOMAINS.TENANT_ID, b)
+                            .execute()))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
@@ -65,10 +78,12 @@ class MigrationTest {
     UUID t = tenant("lower-" + UUID.randomUUID().toString().substring(0, 8));
     assertThatThrownBy(
             () ->
-                db.insertInto(Tables.TENANT_DOMAINS)
-                    .set(Tables.TENANT_DOMAINS.DOMAIN, "Acme.TEST")
-                    .set(Tables.TENANT_DOMAINS.TENANT_ID, t)
-                    .execute())
+                platform(
+                    () ->
+                        db.insertInto(Tables.TENANT_DOMAINS)
+                            .set(Tables.TENANT_DOMAINS.DOMAIN, "Acme.TEST")
+                            .set(Tables.TENANT_DOMAINS.TENANT_ID, t)
+                            .execute()))
         .isInstanceOf(DataIntegrityViolationException.class);
   }
 
@@ -76,14 +91,19 @@ class MigrationTest {
   void deleting_a_tenant_removes_its_domains() {
     UUID t = tenant("del-" + UUID.randomUUID().toString().substring(0, 8));
     String domain = UUID.randomUUID() + ".test";
-    db.insertInto(Tables.TENANT_DOMAINS)
-        .set(Tables.TENANT_DOMAINS.DOMAIN, domain)
-        .set(Tables.TENANT_DOMAINS.TENANT_ID, t)
-        .execute();
+    platform(
+        () ->
+            db.insertInto(Tables.TENANT_DOMAINS)
+                .set(Tables.TENANT_DOMAINS.DOMAIN, domain)
+                .set(Tables.TENANT_DOMAINS.TENANT_ID, t)
+                .execute());
 
-    db.deleteFrom(Tables.TENANTS).where(Tables.TENANTS.ID.eq(t)).execute();
+    platform(() -> db.deleteFrom(Tables.TENANTS).where(Tables.TENANTS.ID.eq(t)).execute());
 
-    assertThat(db.fetchExists(Tables.TENANT_DOMAINS, Tables.TENANT_DOMAINS.DOMAIN.eq(domain)))
+    assertThat(
+            platform(
+                () ->
+                    db.fetchExists(Tables.TENANT_DOMAINS, Tables.TENANT_DOMAINS.DOMAIN.eq(domain))))
         .isFalse();
   }
 }

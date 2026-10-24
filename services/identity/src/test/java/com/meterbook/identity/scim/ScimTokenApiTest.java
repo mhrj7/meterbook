@@ -16,6 +16,7 @@ import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
 import com.meterbook.identity.support.MutableClock;
 import com.meterbook.identity.support.TestDatabase;
+import com.meterbook.identity.tenancy.TenantScope;
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -51,6 +52,7 @@ class ScimTokenApiTest {
 
   @Autowired MockMvc mvc;
   @Autowired DSLContext db;
+  @Autowired TenantScope scope;
   @Autowired JsonMapper json;
   @Autowired MutableClock clock;
 
@@ -65,13 +67,27 @@ class ScimTokenApiTest {
 
   private UUID newTenant() {
     UUID id = UUID.randomUUID();
-    db.insertInto(Tables.TENANTS)
-        .set(Tables.TENANTS.ID, id)
-        .set(Tables.TENANTS.SLUG, "t-" + id.toString().substring(0, 8))
-        .set(Tables.TENANTS.NAME, "Tenant")
-        .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
-        .execute();
+    scope.inTenant(
+        id,
+        () ->
+            db.insertInto(Tables.TENANTS)
+                .set(Tables.TENANTS.ID, id)
+                .set(Tables.TENANTS.SLUG, "t-" + id.toString().substring(0, 8))
+                .set(Tables.TENANTS.NAME, "Tenant")
+                .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
+                .execute());
     return id;
+  }
+
+  private OffsetDateTime lastUsed(UUID id) {
+    return scope.inTenant(
+        tenant,
+        () ->
+            db.select(Tables.SCIM_TOKENS.LAST_USED_AT)
+                .from(Tables.SCIM_TOKENS)
+                .where(Tables.SCIM_TOKENS.ID.eq(id))
+                .fetchOne()
+                .value1());
   }
 
   private ResultActions issue(CallerAuthentication caller, String key) throws Exception {
@@ -102,9 +118,12 @@ class ScimTokenApiTest {
     assertThat(secret).matches("mbscim_[0-9A-Za-z]{43}");
     assertThat(token.get("prefix").asString()).isEqualTo(secret.substring(0, 12));
     var row =
-        db.selectFrom(Tables.SCIM_TOKENS)
-            .where(Tables.SCIM_TOKENS.ID.eq(UUID.fromString(token.get("id").asString())))
-            .fetchOne();
+        scope.inTenant(
+            tenant,
+            () ->
+                db.selectFrom(Tables.SCIM_TOKENS)
+                    .where(Tables.SCIM_TOKENS.ID.eq(UUID.fromString(token.get("id").asString())))
+                    .fetchOne());
     assertThat(row.getTokenHash()).isEqualTo(ScimTokens.hash(secret)).doesNotContain(secret);
     assertThat(
             db.fetch(
@@ -235,28 +254,13 @@ class ScimTokenApiTest {
     String secret = token.get("secret").asString();
 
     scim(secret);
-    OffsetDateTime first =
-        db.select(Tables.SCIM_TOKENS.LAST_USED_AT)
-            .from(Tables.SCIM_TOKENS)
-            .where(Tables.SCIM_TOKENS.ID.eq(id))
-            .fetchOne()
-            .value1();
+    OffsetDateTime first = lastUsed(id);
     clock.advance(Duration.ofSeconds(30));
     scim(secret);
-    OffsetDateTime unchanged =
-        db.select(Tables.SCIM_TOKENS.LAST_USED_AT)
-            .from(Tables.SCIM_TOKENS)
-            .where(Tables.SCIM_TOKENS.ID.eq(id))
-            .fetchOne()
-            .value1();
+    OffsetDateTime unchanged = lastUsed(id);
     clock.advance(Duration.ofMinutes(2));
     scim(secret);
-    OffsetDateTime later =
-        db.select(Tables.SCIM_TOKENS.LAST_USED_AT)
-            .from(Tables.SCIM_TOKENS)
-            .where(Tables.SCIM_TOKENS.ID.eq(id))
-            .fetchOne()
-            .value1();
+    OffsetDateTime later = lastUsed(id);
 
     assertThat(first).isNotNull();
     assertThat(unchanged).isEqualTo(first);

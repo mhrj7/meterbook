@@ -5,6 +5,7 @@ import static com.meterbook.identity.db.Tables.SCIM_GROUP_MEMBERS;
 import static com.meterbook.identity.db.Tables.SCIM_USERS;
 
 import com.meterbook.identity.db.tables.records.ScimGroupsRecord;
+import com.meterbook.identity.tenancy.TenantScope;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.AbstractMap;
@@ -21,7 +22,6 @@ import java.util.regex.Pattern;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
@@ -52,15 +52,20 @@ public class ScimGroups {
   }
 
   private final DSLContext db;
+  private final TenantScope scope;
   private final Clock clock;
 
-  ScimGroups(DSLContext db, Clock clock) {
+  ScimGroups(DSLContext db, TenantScope scope, Clock clock) {
     this.db = db;
+    this.scope = scope;
     this.clock = clock;
   }
 
-  @Transactional
   Group create(UUID tenant, JsonNode body) {
+    return scope.inTenant(tenant, () -> createInScope(tenant, body));
+  }
+
+  private Group createInScope(UUID tenant, JsonNode body) {
     if (body == null || !body.isObject()) {
       throw ScimException.invalidSyntax("the body must be a SCIM Group object");
     }
@@ -88,6 +93,10 @@ public class ScimGroups {
   }
 
   Group get(UUID tenant, UUID id) {
+    return scope.inTenant(tenant, () -> getInScope(tenant, id));
+  }
+
+  private Group getInScope(UUID tenant, UUID id) {
     return db.selectFrom(SCIM_GROUPS)
         .where(SCIM_GROUPS.TENANT_ID.eq(tenant))
         .and(SCIM_GROUPS.ID.eq(id))
@@ -97,6 +106,11 @@ public class ScimGroups {
   }
 
   Map.Entry<Integer, List<Group>> list(
+      UUID tenant, Optional<ScimFilter> filter, int startIndex, int count) {
+    return scope.inTenant(tenant, () -> listInScope(tenant, filter, startIndex, count));
+  }
+
+  private Map.Entry<Integer, List<Group>> listInScope(
       UUID tenant, Optional<ScimFilter> filter, int startIndex, int count) {
     Condition condition = SCIM_GROUPS.TENANT_ID.eq(tenant);
     if (filter.isPresent()) {
@@ -117,9 +131,13 @@ public class ScimGroups {
     return new AbstractMap.SimpleImmutableEntry<>(total, page);
   }
 
-  @Transactional
   Group patch(UUID tenant, UUID id, List<ScimPatch.Operation> operations, String ifMatch) {
-    Group current = get(tenant, id);
+    return scope.inTenant(tenant, () -> patchInScope(tenant, id, operations, ifMatch));
+  }
+
+  private Group patchInScope(
+      UUID tenant, UUID id, List<ScimPatch.Operation> operations, String ifMatch) {
+    Group current = getInScope(tenant, id);
     if (ifMatch != null && !ifMatch.equals(current.etag()) && !ifMatch.equals("*")) {
       throw ScimException.preconditionFailed();
     }
@@ -187,6 +205,10 @@ public class ScimGroups {
   }
 
   void delete(UUID tenant, UUID id) {
+    scope.inTenant(tenant, () -> deleteInScope(tenant, id));
+  }
+
+  private void deleteInScope(UUID tenant, UUID id) {
     int deleted =
         db.deleteFrom(SCIM_GROUPS)
             .where(SCIM_GROUPS.TENANT_ID.eq(tenant))
@@ -197,7 +219,11 @@ public class ScimGroups {
     }
   }
 
-  ObjectNode toJson(Group group) {
+  ObjectNode toJson(UUID tenant, Group group) {
+    return scope.inTenant(tenant, () -> toJsonInScope(group));
+  }
+
+  private ObjectNode toJsonInScope(Group group) {
     ObjectNode out = JsonNodeFactory.instance.objectNode();
     out.putArray("schemas").add(ScimDiscoveryController.GROUP_SCHEMA);
     out.put("id", group.id().toString());
@@ -257,9 +283,13 @@ public class ScimGroups {
       throw ScimException.invalidValue("every member must be a user of this tenant");
     }
     var insert =
-        db.insertInto(SCIM_GROUP_MEMBERS, SCIM_GROUP_MEMBERS.GROUP_ID, SCIM_GROUP_MEMBERS.USER_ID);
+        db.insertInto(
+            SCIM_GROUP_MEMBERS,
+            SCIM_GROUP_MEMBERS.TENANT_ID,
+            SCIM_GROUP_MEMBERS.GROUP_ID,
+            SCIM_GROUP_MEMBERS.USER_ID);
     for (UUID user : wanted) {
-      insert = insert.values(group, user);
+      insert = insert.values(tenant, group, user);
     }
     insert.onConflictDoNothing().execute();
   }

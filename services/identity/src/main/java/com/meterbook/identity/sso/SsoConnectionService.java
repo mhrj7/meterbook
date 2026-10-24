@@ -4,6 +4,7 @@ import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.scim.ScimUsers;
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
+import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.ApiException;
 import com.meterbook.identity.web.Pages;
 import java.net.URI;
@@ -17,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * A tenant's SSO connections. The identity provider is created in Keycloak first, then the row; a
@@ -44,7 +44,7 @@ public class SsoConnectionService {
   private final Directory directory;
   private final ScimUsers scimUsers;
   private final SsoConnectionRepository connections;
-  private final TransactionTemplate transaction;
+  private final TenantScope scope;
   private final SsoProperties properties;
   private final Clock clock;
 
@@ -52,13 +52,13 @@ public class SsoConnectionService {
       Directory directory,
       ScimUsers scimUsers,
       SsoConnectionRepository connections,
-      TransactionTemplate transaction,
+      TenantScope scope,
       SsoProperties properties,
       Clock clock) {
     this.directory = directory;
     this.scimUsers = scimUsers;
     this.connections = connections;
-    this.transaction = transaction;
+    this.scope = scope;
     this.properties = properties;
     this.clock = clock;
   }
@@ -67,7 +67,7 @@ public class SsoConnectionService {
     UUID tenant = tenantAdminTenant(caller);
     String certificate = SigningCertificate.normalise(request.signingCertificate(), clock);
     requireAllowedUrl(request.ssoUrl());
-    if (connections.existsFor(tenant)) {
+    if (scope.inTenant(tenant, () -> connections.existsFor(tenant))) {
       throw ApiException.conflict(
           "sso_connection_exists", "this tenant already has an SSO connection", null);
     }
@@ -97,7 +97,7 @@ public class SsoConnectionService {
       providerCreated = true;
       // Users provisioned before the connection existed sign in through it as themselves.
       scimUsers.linkAll(tenant, alias);
-      transaction.executeWithoutResult(status -> connections.insert(stored));
+      scope.inTenant(tenant, () -> connections.insert(stored));
       return new Connection(stored, serviceProvider);
     } catch (RuntimeException e) {
       // The provider may exist even if the create call failed half-way; deleting a missing one is
@@ -111,8 +111,8 @@ public class SsoConnectionService {
 
   public Connection get(Caller caller, UUID id) {
     UUID tenant = tenantAdminTenant(caller);
-    return connections
-        .find(tenant, id)
+    return scope
+        .inTenant(tenant, () -> connections.find(tenant, id))
         .map(c -> new Connection(c, serviceProvider(c.keycloakAlias(), c.id())))
         .orElseThrow(
             () -> ApiException.notFound("sso_connection_not_found", "no such SSO connection"));
@@ -121,7 +121,7 @@ public class SsoConnectionService {
   public Pages.Page<Connection> list(Caller caller, Optional<UUID> startingAfter, int limit) {
     UUID tenant = tenantAdminTenant(caller);
     List<Connection> rows =
-        connections.list(tenant, startingAfter, limit + 1).stream()
+        scope.inTenant(tenant, () -> connections.list(tenant, startingAfter, limit + 1)).stream()
             .map(c -> new Connection(c, serviceProvider(c.keycloakAlias(), c.id())))
             .toList();
     return Pages.of(rows, limit, c -> c.stored().id().toString());
@@ -130,8 +130,8 @@ public class SsoConnectionService {
   public void delete(Caller caller, UUID id) {
     UUID tenant = tenantAdminTenant(caller);
     SsoConnectionRepository.SsoConnection connection =
-        connections
-            .find(tenant, id)
+        scope
+            .inTenant(tenant, () -> connections.find(tenant, id))
             .orElseThrow(
                 () -> ApiException.notFound("sso_connection_not_found", "no such SSO connection"));
     try {
@@ -141,7 +141,7 @@ public class SsoConnectionService {
     } catch (Directory.UnavailableException e) {
       throw unavailable();
     }
-    connections.delete(tenant, id);
+    scope.inTenant(tenant, () -> connections.delete(tenant, id));
   }
 
   private ServiceProvider serviceProvider(String alias, UUID id) {
