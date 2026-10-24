@@ -329,7 +329,8 @@ secret_env() { # secret_env <var> <secret> <key>
 # pod, so their variables expand there (single quotes are intended).
 SLUG="verify-$(date +%s)"
 # shellcheck disable=SC2016
-api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycloak-clients MB_OPERATOR_CLIENT_SECRET),{\"name\":\"SLUG\",\"value\":\"$SLUG\"}]" '
+LOGIN_PY=$(jq -Rs . <"$(dirname "$0")/oidc_login.py")
+api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycloak-clients MB_OPERATOR_CLIENT_SECRET),$(secret_env IDENTITY_SECRET keycloak-clients MB_IDENTITY_CLIENT_SECRET),{\"name\":\"SLUG\",\"value\":\"$SLUG\"},{\"name\":\"LOGIN_PY\",\"value\":$LOGIN_PY}]" '
   set -u
   kc=http://keycloak.meterbook-dev.svc.cluster.local
   id=http://identity.meterbook-dev.svc.cluster.local
@@ -350,6 +351,36 @@ api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycl
   echo "key_bogus=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $bogus" "$id/v1/api-key")"
   echo "key_bogus_cache=$(curl -s -D - -o /dev/null -H "Authorization: Bearer $bogus" "$id/v1/api-key" | tr -d "\r" | sed -n "s/^[Cc]ache-[Cc]ontrol: //p")"
   echo "key_operator=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$id/v1/api-key")"
+
+  # A real tenant admin (MB-T09 on EKS): the first admin gets a password through the identity service account,
+  # signs in like a browser (authorization code + PKCE), then creates, uses and revokes an API key.
+  admin_email="admin@$SLUG.test"
+  idtoken=$(curl -sf "$kc/realms/meterbook/protocol/openid-connect/token" -d grant_type=client_credentials \
+    -d client_id=meterbook-identity --data-urlencode "client_secret=$IDENTITY_SECRET" | jq -r .access_token)
+  uid=$(curl -sf -H "Authorization: Bearer $idtoken" \
+    "$kc/admin/realms/meterbook/users?email=$admin_email&exact=true" | jq -r ".[0].id")
+  password="Vfy-$(head -c 32 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 24)"
+  echo "set_password=$(curl -s -o /dev/null -w "%{http_code}" -X PUT -H "Authorization: Bearer $idtoken" \
+    -H "Content-Type: application/json" "$kc/admin/realms/meterbook/users/$uid/reset-password" \
+    -d "{\"type\":\"password\",\"value\":\"$password\",\"temporary\":false}")"
+  admin=$(KC=$kc PORTAL=http://portal.meterbook-dev.svc.cluster.local LOGIN_USER=$admin_email LOGIN_PASSWORD=$password \
+    python3 -c "$LOGIN_PY" 2>&1) || { echo "admin_login=failed: $admin" | head -c 300; echo; admin=""; }
+  [ -n "$admin" ] && echo "admin_login=ok"
+  echo "admin_tenant=$(curl -s -H "Authorization: Bearer $admin" "$id/v1/me" | jq -r .tenant_id)"
+  project=$(curl -s -H "Authorization: Bearer $admin" -H "Idempotency-Key: p-$SLUG" -H "Content-Type: application/json" \
+    "$id/v1/projects" -d "{\"name\":\"Verify\",\"slug\":\"verify\"}")
+  keys="$id/v1/projects/$(jq -r .id <<<"$project")/environments/$(jq -r ".environments[0].id" <<<"$project")/api-keys"
+  key=$(curl -s -H "Authorization: Bearer $admin" -H "Idempotency-Key: k-$SLUG" -H "Content-Type: application/json" \
+    "$keys" -d "{\"name\":\"verify\",\"scopes\":[\"usage:write\"]}")
+  secret=$(jq -r .secret <<<"$key")
+  echo "key_live=$(curl -s -H "Authorization: Bearer $secret" "$id/v1/api-key" | jq -r .kind)"
+  echo "key_on_admin_api=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $secret" "$id/v1/projects")"
+  echo "key_revoke=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE -H "Authorization: Bearer $admin" "$keys/$(jq -r .id <<<"$key")")"
+  start=$(date +%s)
+  until [ "$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $secret" "$id/v1/api-key")" = 401 ] \
+    || [ $(( $(date +%s) - start )) -ge 60 ]; do sleep 1; done
+  echo "key_after_revoke=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $secret" "$id/v1/api-key")"
+  echo "key_rejected_within_s=$(( $(date +%s) - start ))"
 ')
 # Each key is read from its first line only, in case a script prints one twice.
 field() { sed -n "s/^$1=//p" <<<"$api" | head -n1; }
@@ -361,6 +392,14 @@ check "/v1/api-key without credentials is refused (401)" eq "$(field key_anonymo
 check "/v1/api-key refuses an unknown key (401)" eq "$(field key_bogus)" 401
 check "an API key refusal is marked no-store, so no service caches it" eq "$(field key_bogus_cache)" no-store
 check "/v1/api-key refuses a person's access token: only keys verify there (401)" eq "$(field key_operator)" 401
+check "the tenant's first admin gets a password through identity's Keycloak account (204)" eq "$(field set_password)" 204
+check "the tenant admin signs in through Keycloak like a browser (authorization code + PKCE)" eq "$(field admin_login)" ok
+check "the admin's token names the new tenant" eq "$(field admin_tenant)" "$(field tenant_id)"
+check "the admin's API key is live and names its environment's kind" eq "$(field key_live)" live
+check "an API key cannot call the admin API (401)" eq "$(field key_on_admin_api)" 401
+check "the admin revokes the key (204)" eq "$(field key_revoke)" 204
+check "a revoked key is rejected (401; TC-PLT-003)" eq "$(field key_after_revoke)" 401
+check "a revoked key is rejected within 60 s (took $(field key_rejected_within_s) s)" test "$(field key_rejected_within_s)" -lt 60
 if wait_until 60 ztunnel_saw keycloak- meterbook-dev/sa/identity; then
   ok "mesh: identity's calls to Keycloak travel over mTLS as spiffe://cluster.local/ns/meterbook-dev/sa/identity"
 else
