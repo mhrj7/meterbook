@@ -39,7 +39,7 @@ keycloak:
     limits: {memory: 1Gi}
   autoscaling: {enabled: false}
   replicas: 1
-  pdb: {enabled: false}         # one replica in dev and staging; a PDB would block node drains
+  pdb: {enabled: false}         # enable together with replicas >= 2 (dev, prod); with one, a PDB blocks drains
   terminationGracePeriodSeconds: 30
 
 identity:

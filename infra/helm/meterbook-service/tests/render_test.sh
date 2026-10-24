@@ -50,7 +50,8 @@ has 'mountPath: /tmp' "$out" && ok "only /tmp is writable (emptyDir)" || bad "on
 has 'maxUnavailable: 0' "$out" && ok "rolling update never drops below desired replicas" || bad "rolling update never drops below desired replicas"
 has 'topologyKey: topology.kubernetes.io/zone' "$out" && ok "replicas spread across zones" || bad "replicas spread across zones"
 has 'policyTypes: \["Ingress"\]' "$out" && ok "network policy restricts ingress" || bad "network policy restricts ingress"
-policy=$(awk 'BEGIN{RS="---"} /kind: NetworkPolicy/' <<<"$out")
+policy=$(awk '/^---/ {if (kind=="NetworkPolicy") print buf; buf=""; kind=""; next} {buf=buf $0 "\n"} /^kind: / {kind=$2}
+  END {if (kind=="NetworkPolicy") print buf}' <<<"$out")
 has 'port: 15008' "$policy" && ok "network policy admits mesh mTLS (HBONE, 15008) from the same peers" || bad "network policy admits mesh mTLS (HBONE, 15008) from the same peers"
 has 'cidr: 169.254.7.127/32' "$policy" && ok "network policy admits kubelet probes rewritten by the mesh" || bad "network policy admits kubelet probes rewritten by the mesh"
 [ "$(count 'cidr:' "$policy")" -eq 1 ] && ok "no other address ranges are admitted" || bad "no other address ranges are admitted"

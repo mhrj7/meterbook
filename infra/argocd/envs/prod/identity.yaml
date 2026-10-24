@@ -1,0 +1,35 @@
+# Keycloak and the identity service in meterbook-prod (MB-T07): secrets, database bootstrap, then the workloads,
+# ordered by sync waves inside the chart (infra/helm/identity-stack/README.md).
+# PROD: every git source is pinned to one commit SHA; change it only with scripts/promote-prod.sh (ADR-0006).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: identity-prod
+  namespace: argocd
+spec:
+  project: meterbook-apps
+  source:
+    repoURL: https://github.com/mhrj7/meterbook.git
+    targetRevision: ba21d34205a3a5378634b970a6848bdced4e5e7d
+    path: infra/helm/identity-stack
+    helm:
+      releaseName: identity
+      valueFiles:
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: meterbook-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      # ExternalSecret and generator CRDs come from platform-external-secrets; retry until they exist.
+      - SkipDryRunOnMissingResource=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

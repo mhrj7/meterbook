@@ -28,7 +28,9 @@ grep -A12 '^kind: PeerAuthentication$' <<<"$out" | grep -q 'selector:' \
   || ok "PeerAuthentication selects no workloads"
 
 for ns in meterbook-dev meterbook-staging; do
-  doc=$(awk -v ns="  name: $ns" 'BEGIN{RS="---"} index($0, ns) && /kind: Namespace/' <<<"$out")
+  doc=$(awk -v want="$ns" '/^---/ {if (kind=="Namespace" && name==want) print buf; buf=""; kind=""; name=""; next}
+    {buf=buf $0 "\n"} /^kind: / {kind=$2} /^  name: / && name=="" {name=$2}
+    END {if (kind=="Namespace" && name==want) print buf}' <<<"$out")
   grep -q 'istio.io/dataplane-mode: ambient' <<<"$doc" && ok "$ns enrolled in ambient" || bad "$ns enrolled in ambient"
   grep -q 'Delete=false' <<<"$doc" && ok "$ns is never deleted by a prune" || bad "$ns is never deleted by a prune"
 done
@@ -36,6 +38,10 @@ done
   || bad "dev cluster: exactly two namespaces enrolled"
 grep -qE 'name: (argocd|external-secrets|kube-system|istio-system)$' <<<"$(grep -A3 '^kind: Namespace$' <<<"$out")" \
   && bad "platform namespaces must stay outside the mesh" || ok "platform namespaces stay outside the mesh"
+
+out=$(render -f "$CHART/values-prod.yaml")
+[ "$(grep -c '^kind: Namespace$' <<<"$out")" -eq 1 ] && grep -q 'name: meterbook-prod$' <<<"$out" \
+  && ok "prod cluster: meterbook-prod alone enrolled" || bad "prod cluster: meterbook-prod alone enrolled"
 
 out=$(render)
 [ "$(grep -c '^kind: Namespace$' <<<"$out" || true)" -eq 0 ] && ok "defaults enrol nothing" || bad "defaults enrol nothing"
