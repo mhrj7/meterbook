@@ -406,7 +406,7 @@
   "authenticationFlows": [
     {
       "alias": "meterbook first broker login",
-      "description": "First sign-in through a tenant's SSO connection: creates the user just in time if the email is unused. It never links to an existing account by email, because a tenant controls its own IdP and could assert anyone's email. Users provisioned by SCIM are linked to their tenant's IdP explicitly by the identity service.",
+      "description": "First SSO sign-in: create the user if the email is unused. Never link to an existing account by email; a tenant's IdP could assert anyone's email. SCIM links its users explicitly.",
       "providerId": "basic-flow",
       "topLevel": true,
       "builtIn": false,
