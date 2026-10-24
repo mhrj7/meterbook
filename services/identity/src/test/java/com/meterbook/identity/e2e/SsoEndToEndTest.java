@@ -1,6 +1,7 @@
 package com.meterbook.identity.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -20,6 +21,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -414,5 +416,52 @@ class SsoEndToEndTest {
     SignIn again = signIn("jane@acme.test", null);
     assertThat(again.code()).as("a deactivated user must not sign in").isEmpty();
     assertThat(again.lastPageText().toLowerCase(java.util.Locale.ROOT)).contains("disabled");
+  }
+
+  @Test
+  @Order(6)
+  void an_api_key_from_the_tenant_admin_works_until_it_is_revoked() throws Exception {
+    // MB-T09 Definition of Done (TC-PLT-003): a revoked key is rejected within 60 s.
+    String ada = tenantAdminToken("ada@acme.test");
+    JsonNode project =
+        call(
+            post("/v1/projects")
+                .header("Authorization", "Bearer " + ada)
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType("application/json")
+                .content("{\"name\":\"Checkout\",\"slug\":\"checkout\"}"),
+            201);
+    String keys =
+        "/v1/projects/"
+            + project.get("id").asString()
+            + "/environments/"
+            + project.get("environments").get(0).get("id").asString()
+            + "/api-keys";
+    JsonNode key =
+        call(
+            post(keys)
+                .header("Authorization", "Bearer " + ada)
+                .header("Idempotency-Key", UUID.randomUUID().toString())
+                .contentType("application/json")
+                .content("{\"name\":\"Usage ingest\",\"scopes\":[\"usage:write\"]}"),
+            201);
+    String secret = key.get("secret").asString();
+    assertThat(secret).startsWith("mb_live_");
+
+    mvc.perform(get("/v1/api-key").header("Authorization", "Bearer " + secret))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.tenant_id").value(acmeTenant))
+        .andExpect(jsonPath("$.kind").value("live"));
+    // A key is not a person: it cannot call the admin API.
+    mvc.perform(get("/v1/projects").header("Authorization", "Bearer " + secret))
+        .andExpect(status().isUnauthorized());
+
+    call(
+        delete(keys + "/" + key.get("id").asString()).header("Authorization", "Bearer " + ada),
+        204);
+    long revoked = System.nanoTime();
+    mvc.perform(get("/v1/api-key").header("Authorization", "Bearer " + secret))
+        .andExpect(status().isUnauthorized());
+    assertThat(Duration.ofNanos(System.nanoTime() - revoked)).isLessThan(Duration.ofSeconds(60));
   }
 }

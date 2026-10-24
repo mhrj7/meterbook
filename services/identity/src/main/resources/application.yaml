@@ -7,6 +7,8 @@ spring:
   jackson:
     property-naming-strategy: SNAKE_CASE
     default-property-inclusion: non_null
+    # Timestamps leave the API in UTC (api-standards.md), whatever zone the JVM or database session uses.
+    time-zone: UTC
     deserialization:
       # The contract forbids unknown fields (additionalProperties: false); a typo must not be ignored silently.
       fail-on-unknown-properties: true
