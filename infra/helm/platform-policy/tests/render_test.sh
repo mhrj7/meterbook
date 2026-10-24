@@ -42,14 +42,16 @@ grep -qE 'name: (argocd|external-secrets|kube-system|istio-system)$' <<<"$(grep 
 
 # --- image admission (ADR-0012) ------------------------------------------------------------------------------
 out=$(render -f "$CHART/values-dev.yaml")
-[ "$(grep -c '^kind: ClusterImagePolicy$' <<<"$out")" -eq 2 ] && ok "two image policies: our images and podinfo" \
-  || bad "two image policies: our images and podinfo"
+[ "$(grep -c '^kind: ClusterImagePolicy$' <<<"$out")" -eq 1 ] && ok "one image policy: our own images only" \
+  || bad "one image policy: our own images only"
+grep -q 'signatureFormat' <<<"$out" && bad "policies use the classic signature format (the controller cannot verify bundles yet)" \
+  || ok "policies use the classic signature format (the controller cannot verify bundles yet)"
 grep -qF 'glob: "ghcr.io/mhrj7/**"' <<<"$out" && grep -qF 'subjectRegExp: "^https://github\\.com/mhrj7/meterbook/\\.github/workflows/container\\.yml@refs/heads/main$"' <<<"$out" \
   && ok "our images must be signed by container.yml on main, exactly" || bad "our images must be signed by container.yml on main, exactly"
 subjects=$(sed -n 's/^ *subjectRegExp: "\(.*\)"$/\1/p' <<<"$out")
 [ -n "$subjects" ] && ! grep -vE '^\^https://github\\\\\.com/[^$]+\$$' <<<"$subjects" >/dev/null \
   && ok "every signer identity is anchored (^...$) to one GitHub repository" || bad "every signer identity is anchored (^...$) to one GitHub repository"
-[ "$(grep -c 'issuer: https://token.actions.githubusercontent.com' <<<"$out")" -eq 2 ] \
+[ "$(grep -c 'issuer: https://token.actions.githubusercontent.com' <<<"$out")" -eq 1 ] \
   && ok "only GitHub Actions' OIDC issuer is trusted" || bad "only GitHub Actions' OIDC issuer is trusted"
 
 out=$(render -f "$CHART/values-prod.yaml")

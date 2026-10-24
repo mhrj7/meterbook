@@ -5,13 +5,10 @@ namespaces: []
 rootNamespace: istio-system
 
 # Images the application namespaces may run (ADR-0012). Each needs a keyless Sigstore signature from the named
-# GitHub Actions workflow; any image matching no policy is refused (no-match-policy: deny).
+# GitHub Actions workflow; any image matching no policy is refused (no-match-policy: deny). Third-party images (the
+# smoke service's podinfo) are re-published and signed by our own pipeline, so one policy covers everything.
 imagePolicies:
   - name: meterbook-images
     glob: "ghcr.io/mhrj7/**"
     # Built, scanned and signed on main by this repository's container workflow (ADR-0003).
     subjectRegExp: '^https://github\.com/mhrj7/meterbook/\.github/workflows/container\.yml@refs/heads/main$'
-  - name: podinfo
-    glob: "ghcr.io/stefanprodan/podinfo**"
-    # The smoke service: signed by its own release workflow at a version tag.
-    subjectRegExp: '^https://github\.com/stefanprodan/podinfo/\.github/workflows/release\.yml@refs/tags/[0-9.]+$'

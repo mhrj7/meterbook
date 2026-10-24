@@ -215,7 +215,8 @@ check "smoke pods run as non-root with a read-only root filesystem" bash -c "
     | grep -v '^true true$' | grep -q . && exit 1 || exit 0"
 
 probe() { # probe <namespace> <pod-name> [labels]: HTTP GET to the dev smoke service from a pod in <namespace>
-  kubectl -n "$1" run "$2" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --labels="${3:-app=probe}" \
+  # --command: the tools image's entrypoint is the db-bootstrap script.
+  kubectl -n "$1" run "$2" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --command --labels="${3:-app=probe}" \
     --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
     -- wget -q -T 5 -O- http://smoke.meterbook-dev.svc.cluster.local/healthz
 }
@@ -248,7 +249,7 @@ check "mesh-wide PeerAuthentication is STRICT" eq \
 # Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext.
 # The client runs first and calls once Ready, so ztunnel already knows it; its rejection is found by its address.
 kubectl -n meterbook-dev delete pod plaintext-client --ignore-not-found --wait=true >/dev/null 2>&1 || true
-kubectl -n meterbook-dev run plaintext-client --image="$TOOLS_IMAGE" --restart=Never \
+kubectl -n meterbook-dev run plaintext-client --image="$TOOLS_IMAGE" --restart=Never --command \
   --labels=istio.io/dataplane-mode=none --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' -- sleep 600 >/dev/null 2>&1 || true
 kubectl -n meterbook-dev wait --for=condition=Ready pod/plaintext-client --timeout=120s >/dev/null 2>&1 || true
 CLIENT_IP=$(kubectl -n meterbook-dev get pod plaintext-client -o 'jsonpath={.status.podIP}' 2>/dev/null)

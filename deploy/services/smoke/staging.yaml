@@ -1,10 +1,11 @@
 # Platform smoke test: proves the GitOps path and the hardened chart end to end on every cluster sync.
-# podinfo is a small, well-known demo service that runs as non-root with a read-only filesystem.
+# podinfo, a small, well-known demo service that runs as non-root with a read-only filesystem, re-published and
+# signed by our pipeline (services/smoke, ADR-0012).
 name: smoke
 image:
-  repository: ghcr.io/stefanprodan/podinfo
-  tag: "6.15.0"          # human-readable; the digest below is what deploys
-  digest: "sha256:ec73780a8425f59ea49f5bc8cdff0d598805a224fbaa1f86c67a244f250fa9da"
+  repository: ghcr.io/mhrj7/meterbook-smoke
+  tag: "6.15.0"          # podinfo's version; the digest below is what deploys
+  digest: "sha256:a8b58c8ac33f565decf9ea7325146647f273e55c3dd21a57850f8c02013bfd19"
 containerPort: 9898
 # The image has no ENTRYPOINT (only CMD ./podinfo), so args alone would replace the binary: set both.
 command: ["./podinfo"]

@@ -113,7 +113,8 @@ TOOLS_DIGEST=$(awk '/^dbBootstrap:/{f=1} f && /digest:/ {gsub(/"/, "", $2); prin
   "$ROOT/infra/helm/identity-stack/values-dev.yaml")
 TOOLS_IMAGE="ghcr.io/mhrj7/meterbook-db-bootstrap@$TOOLS_DIGEST"
 probe() { # probe <namespace> <pod-name> [labels]
-  kubectl -n "$1" run "$2" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --labels="${3:-app=probe}" \
+  # --command: the tools image's entrypoint is the db-bootstrap script.
+  kubectl -n "$1" run "$2" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --command --labels="${3:-app=probe}" \
     --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
     -- wget -q -T 5 -O- "http://smoke.meterbook-$FIRST.svc.cluster.local/healthz"
 }
@@ -134,7 +135,7 @@ ok "${NAMESPACES% } enrolled in the ambient mesh"
 ok "mesh-wide PeerAuthentication STRICT"
 # Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext. The client runs
 # first and calls once Ready, so ztunnel already knows it; its rejection is then found by the client's address.
-kubectl -n "meterbook-$FIRST" run plaintext-client --image="$TOOLS_IMAGE" --restart=Never \
+kubectl -n "meterbook-$FIRST" run plaintext-client --image="$TOOLS_IMAGE" --restart=Never --command \
   --labels=istio.io/dataplane-mode=none --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' -- sleep 600 >/dev/null
 kubectl -n "meterbook-$FIRST" wait --for=condition=Ready pod/plaintext-client --timeout=120s >/dev/null
 CLIENT_IP=$(kubectl -n "meterbook-$FIRST" get pod plaintext-client -o 'jsonpath={.status.podIP}')
@@ -187,8 +188,21 @@ kubectl -n np-outsider run unsigned-outside --image=busybox:1.37 --restart=Never
   || die "an unsigned image was refused outside the application namespaces"
 kubectl -n np-outsider delete pod unsigned-outside --wait=false >/dev/null
 ok "namespaces outside the policy are not affected"
-# Our signed image and podinfo (signed by its release workflow) already run: the probes above and the smoke service.
-ok "images signed by container.yml on main (tools) and by podinfo's release workflow (smoke) are admitted"
+# Every image pinned for these environments must pass admission. A server-side dry run goes through the webhook
+# without starting anything, so this also covers Keycloak and identity, whose pods never start here (no AWS secrets).
+helm dependency build "$ROOT/infra/helm/identity-stack" >/dev/null
+helm dependency build "$ROOT/infra/helm/meterbook-service" >/dev/null
+pinned=$(for env in "${ENVS[@]}"; do
+  helm template identity "$ROOT/infra/helm/identity-stack" -f "$ROOT/infra/helm/identity-stack/values-$env.yaml" 2>/dev/null
+  for f in "$ROOT"/deploy/services/*/"$env".yaml; do helm template svc "$ROOT/infra/helm/meterbook-service" -f "$f"; done
+done | sed -n 's/^ *image: "\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' | sort -u)
+[ -n "$pinned" ] || die "no pinned images found in the rendered charts"
+for image in $pinned; do
+  result=$(kubectl -n "meterbook-$FIRST" run "admit-$RANDOM" --dry-run=server --image="$image" --restart=Never \
+    --command -- true 2>&1 || true)
+  grep -q 'created (server dry run)' <<<"$result" || die "a pinned image is refused at admission: $result"
+  ok "pinned ${image%%@*} is admitted"
+done
 
 step "6. Drift is reverted in $HEAL (self-heal)"
 kubectl -n "meterbook-$HEAL" scale deploy smoke --replicas=1 >/dev/null

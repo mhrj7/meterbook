@@ -42,11 +42,17 @@ We will use **Option B**, Sigstore policy-controller (chart 0.10.8, controller 0
   `platform-policy` chart together with the mesh label (ADR-0011). Both live in one chart because ArgoCD applies every
   chart with the same field manager, so two charts labelling one namespace would remove each other's labels.
 - **Deny by default:** `no-match-policy: deny`. An image that matches no `ClusterImagePolicy` is refused.
-- **Policies** (keyless, Fulcio certificates issued to `https://token.actions.githubusercontent.com`, recorded in
-  Rekor), each with its subject anchored `^…$`:
-  - `ghcr.io/mhrj7/**`: signed by `mhrj7/meterbook/.github/workflows/container.yml@refs/heads/main`. Images built from
-    branches, other workflows or other repositories are refused.
-  - `ghcr.io/stefanprodan/podinfo**` (the smoke service): signed by podinfo's own `release.yml` at a version tag.
+- **One policy** (keyless, Fulcio certificates issued to `https://token.actions.githubusercontent.com`, recorded in
+  Rekor, subject anchored `^…$`): `ghcr.io/mhrj7/**` signed by
+  `mhrj7/meterbook/.github/workflows/container.yml@refs/heads/main`. Images built from branches, other workflows or
+  other repositories are refused.
+- **Third-party images are re-published, not trusted directly:** the smoke service is podinfo, rebuilt `FROM` its
+  pinned digest in `services/smoke`, so our pipeline scans it, gives it an SBOM and signs it like our own images.
+- **Classic signatures as well as bundles:** cosign 3 signs in the Sigstore bundle format only, and policy-controller
+  (0.13.1 through 0.15.1, tested) answers "bundle support for image signatures is not yet implemented". The pipeline
+  therefore also writes the classic signature (`--new-bundle-format=false`), and `container.yml` has a manual re-sign
+  job on `main` that adds it to an image it already built (after verifying that). The certificate names the signing
+  workflow, so only that file can produce an acceptable signature.
 - **Policies match Git exactly:** `mode: enforce` and the authority name are written explicitly, so no field of a
   security policy is excluded from drift detection. Only the controller's own webhook fields it rewrites at runtime
   (CA bundle, service path, namespace selector) are ignored by ArgoCD.
@@ -55,13 +61,14 @@ We will use **Option B**, Sigstore policy-controller (chart 0.10.8, controller 0
 
 ## Consequences
 
-- **Positive:** an image runs in an application namespace only if this repository's `main` pipeline (or podinfo's
-  release pipeline) signed that exact digest; signatures now have a consumer; a stray manifest cannot run an
+- **Positive:** an image runs in an application namespace only if this repository's `main` pipeline signed that
+  exact digest; signatures now have a consumer; a stray manifest cannot run an
   arbitrary image.
 - **Negative / accepted trade-offs:** pods in application namespaces cannot start while the webhook is down (fails
   closed); every new third-party image needs a reviewed policy first; verification reaches Fulcio, Rekor and the
   Sigstore TUF root over the network.
 - **Known gap:** the chart's `leases-cleanup` Job uses an unpinned image (`cgr.dev/chainguard/kubectl:latest-dev`).
   It is a Helm `post-delete` hook, which ArgoCD does not run, so it never executes in our clusters.
-- **Follow-up work:** require SBOM attestations as well as signatures; policies for platform namespaces once their
+- **Follow-up work:** drop the classic signature once policy-controller verifies bundles (cosign has deprecated the
+  classic format); require SBOM attestations as well as signatures; policies for platform namespaces once their
   images are verifiable (Istio and External Secrets sign theirs).
