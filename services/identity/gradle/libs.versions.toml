@@ -9,10 +9,13 @@ errorprone = "2.51.0"
 # 1.37.0 fails inside Spotless 8.10.4 (InvocationTargetException on every file); revisit with the next Spotless.
 google-java-format = "1.36.0"
 jacoco = "0.8.14"
+# 1.64.0 is less than two weeks old.
+playwright = "1.63.0"
 # Must equal the jOOQ version Spring Boot manages.
 jooq = "3.21.9"
 
 [libraries]
+playwright = { module = "com.microsoft.playwright:playwright", version.ref = "playwright" }
 jooq-meta-extensions = { module = "org.jooq:jooq-meta-extensions", version.ref = "jooq" }
 errorprone-core = { module = "com.google.errorprone:error_prone_core", version.ref = "errorprone" }
 

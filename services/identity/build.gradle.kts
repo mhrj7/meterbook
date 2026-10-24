@@ -46,6 +46,7 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
     testImplementation("org.testcontainers:testcontainers-postgresql")
+    testImplementation(libs.playwright)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
@@ -104,10 +105,33 @@ tasks.bootJar { archiveFileName = "identity.jar" }
 tasks.jar { enabled = false }
 
 tasks.test {
-    useJUnitPlatform()
+    // Browser end-to-end tests run in their own task (e2eTest) and CI job.
+    useJUnitPlatform { excludeTags("e2e") }
     // Required at start-up (no default); tests that talk to Keycloak override it.
     systemProperty("identity.keycloak.client-secret", "unused-in-tests")
     finalizedBy(tasks.jacocoTestReport)
+}
+
+val e2eTest by tasks.registering(Test::class) {
+    description = "SSO end-to-end: a real browser signs in through a SAML IdP (TC-PLT-001)."
+    group = "verification"
+    testClassesDirs =
+        sourceSets.test
+            .get()
+            .output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform { includeTags("e2e") }
+    systemProperty("identity.keycloak.client-secret", "unused-in-tests")
+    shouldRunAfter(tasks.test)
+}
+
+val playwrightInstall by tasks.registering(JavaExec::class) {
+    description = "Downloads the Chromium build Playwright drives."
+    group = "verification"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass = "com.microsoft.playwright.CLI"
+    // On CI the runner also needs Chromium's system libraries.
+    args(if (System.getenv("CI") == "true") listOf("install", "--with-deps", "chromium") else listOf("install", "chromium"))
 }
 
 jacoco { toolVersion = libs.versions.jacoco.get() }
