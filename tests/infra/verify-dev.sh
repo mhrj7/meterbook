@@ -174,7 +174,8 @@ done
 TOOLS_DIGEST=$(awk '/^dbBootstrap:/{f=1} f && /digest:/ {gsub(/"/, "", $2); print $2; exit}' \
   "$(dirname "$0")/../../infra/helm/identity-stack/values-dev.yaml")
 TOOLS_IMAGE="ghcr.io/mhrj7/meterbook-db-bootstrap@$TOOLS_DIGEST"
-kubectl -n meterbook-dev apply -f - >/dev/null <<'YAML'
+# The heredoc stays quoted (the pod expands ${STRIPE_API_KEY} itself); only the image is filled in here.
+sed "s#\$TOOLS_IMAGE#$TOOLS_IMAGE#" <<'YAML' | kubectl -n meterbook-dev apply -f - >/dev/null
 apiVersion: v1
 kind: Pod
 metadata:
