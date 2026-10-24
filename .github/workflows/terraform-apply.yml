@@ -20,6 +20,10 @@ on:
         description: "dev only: destroy after verification"
         type: boolean
         default: true
+      destroy_only:
+        description: "dev only: skip apply and verification, destroy what is left (cleanup after a failed run)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -81,6 +85,7 @@ jobs:
           -backend-config="encrypt=true"
           -backend-config="use_lockfile=true"
       - name: Purge dev secrets left pending deletion
+        if: ${{ !inputs.destroy_only }}
         # A secret name cannot be reused while it is scheduled for deletion. dev is disposable and its secrets are
         # empty shells, so leftovers from an interrupted run are removed before the apply recreates them.
         run: |
@@ -93,14 +98,17 @@ jobs:
           done
           if [ -n "$arns" ]; then sleep 20; fi
       - name: Plan
+        if: ${{ !inputs.destroy_only }}
         run: terraform plan -input=false -lock-timeout=5m -no-color -out=tfplan
       - name: Apply
         id: apply
+        if: ${{ !inputs.destroy_only }}
         run: |
           start=$(date +%s)
           terraform apply -input=false -lock-timeout=5m tfplan
           echo "Apply took $(( $(date +%s) - start ))s" >> "$GITHUB_STEP_SUMMARY"
       - name: Verify (AWS baseline, GitOps, secrets delivery, workload hardening)
+        if: ${{ !inputs.destroy_only }}
         working-directory: .
         env:
           STATE_BUCKET: ${{ secrets.TF_STATE_BUCKET }}
@@ -116,10 +124,29 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Destroy
-        if: always() && inputs.destroy_after && steps.init.outcome == 'success'
+        if: always() && (inputs.destroy_after || inputs.destroy_only) && steps.init.outcome == 'success'
         run: |
           start=$(date +%s)
-          terraform destroy -input=false -lock-timeout=5m -auto-approve
+          if ! terraform destroy -input=false -lock-timeout=5m -auto-approve; then
+            # The VPC CNI can leave detached network interfaces behind when nodes go, and they block deleting the
+            # subnets and security groups (DependencyViolation). Remove the detached ones in this VPC only, then
+            # retry once.
+            vpc_addr=$(terraform state list | grep -E 'aws_vpc\.this' | head -n1 || true)
+            vpc=""
+            if [ -n "$vpc_addr" ]; then
+              vpc=$(terraform state show -no-color "$vpc_addr" | awk '$1 == "id" {gsub(/"/, "", $3); print $3; exit}')
+            fi
+            if [ -n "$vpc" ]; then
+              enis=$(aws ec2 describe-network-interfaces --filters "Name=vpc-id,Values=$vpc" "Name=status,Values=available" \
+                --query 'NetworkInterfaces[].NetworkInterfaceId' --output text)
+              for eni in $enis; do
+                echo "Deleting detached network interface $eni"
+                aws ec2 delete-network-interface --network-interface-id "$eni"
+              done
+              echo "Removed $(wc -w <<<"$enis") detached network interfaces before retrying" >> "$GITHUB_STEP_SUMMARY"
+            fi
+            terraform destroy -input=false -lock-timeout=5m -auto-approve
+          fi
           echo "Destroy took $(( $(date +%s) - start ))s" >> "$GITHUB_STEP_SUMMARY"
           left=$(terraform state list | wc -l)
           echo "Resources left in state: $left" >> "$GITHUB_STEP_SUMMARY"
