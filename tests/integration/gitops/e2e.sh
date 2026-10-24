@@ -79,7 +79,7 @@ done | kubectl apply -f - >/dev/null
 ok "${ENVS[*]} Applications and ApplicationSets created"
 
 step "1. Everything syncs from Git"
-MESH_APPS="platform-istio-base platform-istiod platform-istio-cni platform-ztunnel platform-mesh"
+MESH_APPS="platform-istio-base platform-istiod platform-istio-cni platform-ztunnel platform-policy-controller platform-policy"
 for app in $MESH_APPS platform-external-secrets $(printf 'platform-secrets-%s ' "${ENVS[@]}") $(printf 'smoke-%s ' "${ENVS[@]}"); do
   wait_until 600 "$app to be generated" kubectl -n argocd get application "$app"
   wait_until 600 "$app Synced" app_synced "$app"
@@ -107,8 +107,13 @@ if grep -qv '^true true false$' <<<"$pods"; then die "smoke pods are not hardene
 ok "smoke pods: non-root, read-only root filesystem, no privilege escalation"
 
 step "3. NetworkPolicy is enforced"
+# Test pods use our own signed tools image (the db-bootstrap image pinned for dev): application namespaces admit only
+# signed images (ADR-0012).
+TOOLS_DIGEST=$(awk '/^dbBootstrap:/{f=1} f && /digest:/ {gsub(/"/, "", $2); print $2; exit}' \
+  "$ROOT/infra/helm/identity-stack/values-dev.yaml")
+TOOLS_IMAGE="ghcr.io/mhrj7/meterbook-db-bootstrap@$TOOLS_DIGEST"
 probe() { # probe <namespace> <pod-name> [labels]
-  kubectl -n "$1" run "$2" --image=busybox:1.37 --restart=Never --rm -i --quiet --labels="${3:-app=probe}" \
+  kubectl -n "$1" run "$2" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --labels="${3:-app=probe}" \
     --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' \
     -- wget -q -T 5 -O- "http://smoke.meterbook-$FIRST.svc.cluster.local/healthz"
 }
@@ -129,7 +134,7 @@ ok "${NAMESPACES% } enrolled in the ambient mesh"
 ok "mesh-wide PeerAuthentication STRICT"
 # Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext. The client runs
 # first and calls once Ready, so ztunnel already knows it; its rejection is then found by the client's address.
-kubectl -n "meterbook-$FIRST" run plaintext-client --image=busybox:1.37 --restart=Never \
+kubectl -n "meterbook-$FIRST" run plaintext-client --image="$TOOLS_IMAGE" --restart=Never \
   --labels=istio.io/dataplane-mode=none --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' -- sleep 600 >/dev/null
 kubectl -n "meterbook-$FIRST" wait --for=condition=Ready pod/plaintext-client --timeout=120s >/dev/null
 CLIENT_IP=$(kubectl -n "meterbook-$FIRST" get pod plaintext-client -o 'jsonpath={.status.podIP}')
@@ -168,7 +173,24 @@ wait_until 60 "ztunnel to count the request as mTLS from the client's SPIFFE ide
   ztunnel_mtls smoke "meterbook-$FIRST/sa/default"
 ok "ztunnel counts the request as mTLS from the client's SPIFFE identity"
 
-step "5. Drift is reverted in $HEAL (self-heal)"
+step "5. Only signed images run in application namespaces"
+for ns in $NAMESPACES; do
+  [ "$(kubectl get namespace "$ns" -o 'jsonpath={.metadata.labels.policy\.sigstore\.dev/include}')" = true ] \
+    || die "$ns is not enrolled in image admission"
+done
+ok "${NAMESPACES% } enrolled in image admission"
+# busybox from Docker Hub carries no signature from an allowed workflow, so no policy matches it.
+denied=$(kubectl -n "meterbook-$FIRST" run unsigned --image=busybox:1.37 --restart=Never -- true 2>&1 || true)
+grep -q 'no matching policies' <<<"$denied" || die "an unsigned image was not refused: $denied"
+ok "an unsigned image is refused at admission (no matching policy)"
+kubectl -n np-outsider run unsigned-outside --image=busybox:1.37 --restart=Never -- true >/dev/null \
+  || die "an unsigned image was refused outside the application namespaces"
+kubectl -n np-outsider delete pod unsigned-outside --wait=false >/dev/null
+ok "namespaces outside the policy are not affected"
+# Our signed image and podinfo (signed by its release workflow) already run: the probes above and the smoke service.
+ok "images signed by container.yml on main (tools) and by podinfo's release workflow (smoke) are admitted"
+
+step "6. Drift is reverted in $HEAL (self-heal)"
 kubectl -n "meterbook-$HEAL" scale deploy smoke --replicas=1 >/dev/null
 wait_until 180 "$HEAL smoke restored to 2 replicas" deploy_ready "meterbook-$HEAL" smoke 2
 ok "manual change in $HEAL reverted by ArgoCD"

@@ -1,7 +1,0 @@
-apiVersion: v2
-name: platform-mesh
-description: Strict mTLS for the Istio ambient mesh and the application namespaces enrolled in it (ADR-0011).
-type: application
-version: 0.1.0
-# Requires Istio >= 1.24 in ambient mode (security.istio.io/v1); tested with 1.31.3.
-appVersion: "1.31.3"

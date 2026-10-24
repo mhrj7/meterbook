@@ -1,6 +1,6 @@
 # PROD: every git source is pinned to one commit SHA; change it only with scripts/promote-prod.sh (ADR-0006).
-# Istio in ambient mode, once per cluster (ADR-0011): CRDs, istiod, the CNI agent and ztunnel, then strict mTLS and
-# the enrolled namespaces (platform-mesh). Charts from Istio's OCI registry; images from Google's Docker Hub mirror,
+# Istio in ambient mode, once per cluster (ADR-0011): CRDs, istiod, the CNI agent and ztunnel. Strict mTLS and the
+# enrolled namespaces come from platform-policy (policy.yaml). Charts from Istio's OCI registry; images from Google's Docker Hub mirror,
 # since Istio 1.31 publishes images to Docker Hub only and Docker Hub throttles anonymous pulls.
 # 1.31.3 is newer than our two-week rule allows: it is a security release (ISTIO-SECURITY-2026-008, after the
 # 1.31.2 security fixes), and staying on an older patch would keep known vulnerabilities in every node's ztunnel.
@@ -149,38 +149,3 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
----
-apiVersion: argoproj.io/v1alpha1
-kind: Application
-metadata:
-  name: platform-mesh
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "-12"
-spec:
-  project: platform
-  source:
-    repoURL: https://github.com/mhrj7/meterbook.git
-    targetRevision: 2c2a5655e7bc3d08b802a026b78a35fa2cd792c2
-    path: infra/helm/platform-mesh
-    helm:
-      releaseName: platform-mesh
-      valueFiles:
-        - values-prod.yaml
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: istio-system
-  syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
-    syncOptions:
-      - ServerSideApply=true
-      # The PeerAuthentication CRD comes from platform-istio-base; retry until it exists.
-      - SkipDryRunOnMissingResource=true
-    retry:
-      limit: 10
-      backoff:
-        duration: 15s
-        factor: 2
-        maxDuration: 3m
