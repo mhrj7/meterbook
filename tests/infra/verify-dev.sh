@@ -275,6 +275,12 @@ api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycl
   tenant=$(head -n1 <<<"$created" | jq -r .id)
   echo "tenant_id=$tenant"
   echo "get_tenant=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$id/v1/tenants/$tenant")"
+  # API keys (ADR-0010): /v1/api-key takes a key only, and its refusals must never be cached.
+  bogus="mb_live_$(head -c 64 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 46)"
+  echo "key_anonymous=$(curl -s -o /dev/null -w "%{http_code}" "$id/v1/api-key")"
+  echo "key_bogus=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $bogus" "$id/v1/api-key")"
+  echo "key_bogus_cache=$(curl -s -D - -o /dev/null -H "Authorization: Bearer $bogus" "$id/v1/api-key" | tr -d "\r" | sed -n "s/^[Cc]ache-[Cc]ontrol: //p")"
+  echo "key_operator=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$id/v1/api-key")"
 ')
 # kubectl run -i can deliver a pod's output twice (attach, then logs), so each key is read from its first line only.
 field() { sed -n "s/^$1=//p" <<<"$api" | head -n1; }
@@ -282,6 +288,10 @@ check "identity rejects a request without a token (401)" eq "$(field anonymous_m
 check "an operator token from Keycloak is accepted; /v1/me needs a tenant (403)" eq "$(field operator_me)" 403
 check "an operator creates a tenant through identity, which provisions Keycloak (201)" eq "$(field create_tenant)" 201
 check "the new tenant is readable (200)" eq "$(field get_tenant)" 200
+check "/v1/api-key without credentials is refused (401)" eq "$(field key_anonymous)" 401
+check "/v1/api-key refuses an unknown key (401)" eq "$(field key_bogus)" 401
+check "an API key refusal is marked no-store, so no service caches it" eq "$(field key_bogus_cache)" no-store
+check "/v1/api-key refuses a person's access token: only keys verify there (401)" eq "$(field key_operator)" 401
 
 # The database on RDS: identity's role is confined to its own database, its migrations ran there, and row-level
 # security (ADR-0009) holds for that role: without a tenant scope it sees none of the tenant created above.
@@ -302,7 +312,7 @@ db=$(in_cluster identity-db meterbook-dev "[$(secret_env DB_HOST database DB_HOS
     -c "select count(*) from identity.tenants" -c "commit" 2>&1 | sed -n 2p)"
 ')
 dbf() { sed -n "s/^$1=//p" <<<"$db" | head -n1; }
-check "identity's migrations ran in identity_dev on RDS" test "$(dbf own)" -ge 5
+check "identity's migrations ran in identity_dev on RDS (through V6, API keys)" test "$(dbf own)" -ge 6
 check "identity's database role cannot connect to Keycloak's database" eq "$(dbf other)" "does not have CONNECT privilege"
 check "identity's database role is no superuser and cannot bypass row-level security" eq "$(dbf bypass)" f
 check "every identity table holding tenant data forces row-level security" eq "$(dbf unforced)" 0
