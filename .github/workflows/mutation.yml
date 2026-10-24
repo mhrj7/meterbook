@@ -1,6 +1,7 @@
-# Mutation testing (PIT) for the Java services: do the tests notice when the code changes? It takes about an hour,
-# too slow for every pull request, so it runs after Java changes reach main, weekly and on demand. Below the 75%
-# target (tracker, Coverage sheet) the run fails.
+# Mutation testing (PIT) for the Java services: do the tests notice when the code changes? Too slow for every pull
+# request (a single run exceeds two and a half hours on a hosted runner), so it runs after Java changes reach main,
+# weekly and on demand, split into parallel shards by package. Below the 75% target (tracker, Coverage sheet) a shard
+# fails.
 name: mutation
 
 on:
@@ -22,13 +23,19 @@ concurrency:
 
 jobs:
   pitest:
-    name: PIT ${{ matrix.service }}
+    name: PIT ${{ matrix.service }} (${{ matrix.shard.name }})
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         service: [identity]
+        # Roughly equal mutant counts; together they cover every package of the service.
+        shard:
+          - {name: scim, targets: "com.meterbook.identity.scim.*"}
+          - {name: sso and tenants, targets: "com.meterbook.identity.sso.*,com.meterbook.identity.directory.*,com.meterbook.identity.tenants.*"}
+          - {name: keys and tenancy, targets: "com.meterbook.identity.apikeys.*,com.meterbook.identity.projects.*,com.meterbook.identity.tenancy.*,com.meterbook.identity.idempotency.*"}
+          - {name: web and security, targets: "com.meterbook.identity.web.*,com.meterbook.identity.security.*,com.meterbook.identity.me.*,com.meterbook.identity.IdentityApplication,com.meterbook.identity.AppConfig"}
     defaults:
       run:
         # Job defaults replace the workflow defaults: repeat the shell, or pipefail is lost.
@@ -44,24 +51,28 @@ jobs:
         with:
           cache-read-only: true
       - name: PIT (fails below the mutation threshold)
-        run: ./gradlew pitest --no-daemon
+        env:
+          TARGETS: ${{ matrix.shard.targets }}
+        run: ./gradlew pitest --no-daemon "-PpitTargets=$TARGETS"
       - name: Summarise
         if: always()
         env:
           SERVICE: ${{ matrix.service }}
+          SHARD: ${{ matrix.shard.name }}
         run: |
           python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
           import collections, os, xml.etree.ElementTree as ET
           path = "build/reports/pitest/mutations.xml"
           if not os.path.exists(path):
-              print(f"### PIT {os.environ['SERVICE']}: no report"); raise SystemExit
+              print(f"### PIT {os.environ['SERVICE']} ({os.environ['SHARD']}): no report"); raise SystemExit
           packages = collections.defaultdict(lambda: [0, 0])
           for m in ET.parse(path).getroot().iter("mutation"):
               package = m.findtext("mutatedClass").rsplit(".", 1)[0]
               packages[package][0] += 1
               packages[package][1] += m.get("detected") == "true"
           total = sum(n for n, _ in packages.values()); killed = sum(k for _, k in packages.values())
-          print(f"### PIT {os.environ['SERVICE']}: {killed}/{total} mutants killed ({100 * killed / total:.1f}%)")
+          print(f"### PIT {os.environ['SERVICE']} ({os.environ['SHARD']}): {killed}/{total} mutants killed "
+                f"({100 * killed / total:.1f}%)")
           print("| Package | Killed | Score |\n|---|---|---|")
           for package, (n, k) in sorted(packages.items()):
               print(f"| `{package}` | {k}/{n} | {100 * k / n:.0f}% |")
@@ -70,6 +81,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: pitest-${{ matrix.service }}
+          name: pitest-${{ matrix.service }}-${{ strategy.job-index }}
           path: services/${{ matrix.service }}/build/reports/pitest/
           retention-days: 30
