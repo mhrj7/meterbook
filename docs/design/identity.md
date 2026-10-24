@@ -119,7 +119,7 @@ Schema `identity` in the shared PostgreSQL instance, owned by the identity servi
 | `idempotency_keys` | `(scope, key)` | stored response for 24 h; scope is the caller's user ID |
 | `projects` (MB-T08) | `id`, `tenant_id`, `slug` unique per tenant, `name` | at most 100 per tenant |
 | `environments` (MB-T08) | `id`, `tenant_id`, `project_id`, `slug` unique per project, `kind` (`live`/`test`) | at most 20 per project |
-| `api_keys` (MB-T09) | `id`, `tenant_id`, `environment_id`, `key_hash` unique, `prefix`, `scopes`, `expires_at`, `revoked_at`, `last_used_at`, `rotated_to` | key = `mb_<kind>_` + 40 base62 + CRC-32; at most 50 unrevoked per environment |
+| `api_keys` (MB-T09) | `id`, `tenant_id`, `environment_id`, `key_hash` unique, `prefix`, `scopes`, `expires_at`, `revoked_at`, `last_used_at`, `rotated_to` | key = `mb_<kind>_` + 40 base62 + CRC-32; at most 50 live per environment |
 
 ### 7.3 Consistency, ordering and idempotency
 

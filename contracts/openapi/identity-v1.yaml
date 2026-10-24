@@ -372,7 +372,7 @@ paths:
       operationId: createApiKey
       summary: Create an API key
       description: |
-        Requires the `tenant-admin` role. At most 50 unrevoked keys per environment. The secret is returned once and
+        Requires the `tenant-admin` role. At most 50 live (unrevoked, unexpired) keys per environment. The secret is returned once and
         stored only as a hash, so a repeat with the same Idempotency-Key returns 409 `idempotency_key_used` naming
         the created key instead of the secret.
       parameters:

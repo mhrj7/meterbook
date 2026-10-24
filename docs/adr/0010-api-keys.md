@@ -50,7 +50,8 @@ We will use **Option C**.
 - **Lifecycle:** tenant admins create, list (no secrets), rotate and revoke keys; members read. A key may have an
   expiry. **Rotation** issues a new key with the same name and scopes and sets the old key to expire after a grace
   period (default 24 h, at most 7 days, 0 for immediate) so integrations switch over without downtime. **Revocation**
-  takes effect at once. At most 50 unrevoked keys per environment.
+  takes effect at once. At most 50 live (unrevoked, unexpired) keys per environment; a rotation may briefly
+  exceed it, since its successor replaces a key.
 - **Verification:** `GET /v1/api-key` with the key as `Authorization: Bearer` returns the key's tenant, project,
   environment, kind and scopes, or 401. SDKs use it to check credentials; services use it to verify keys, and may
   cache a positive answer for at most **30 seconds** (`Cache-Control: private, max-age=30`) and must not cache a
