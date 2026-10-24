@@ -11,10 +11,13 @@ check: fmt no-secret-values validate test lint scan
 fmt:
 	terraform fmt -check -recursive -diff
 
-# Secret values are set out-of-band (ADR-0004); they must never pass through Terraform state.
+# Secret values are set out-of-band (ADR-0004); they must never pass through Terraform state. The only exception is
+# a value that is not a secret, marked on the line above the resource with "# not-a-secret: <reason>".
 no-secret-values:
-	@if grep -rnE 'resource +"aws_(secretsmanager_secret_version|ssm_parameter)"' --include='*.tf' .; then \
-		echo "Secret values must not be managed by Terraform (ADR-0004)."; exit 1; \
+	@found=$$(grep -rnE -B1 'resource +"aws_(secretsmanager_secret_version|ssm_parameter)"' --include='*.tf' . \
+		| awk '/not-a-secret:/ {skip=1; next} /resource +"aws_/ {if (!skip) print; skip=0; next} {skip=0}'); \
+	if [ -n "$$found" ]; then \
+		echo "$$found"; echo "Secret values must not be managed by Terraform (ADR-0004)."; exit 1; \
 	fi
 	@echo "no secret values in Terraform"
 

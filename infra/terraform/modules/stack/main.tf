@@ -87,6 +87,7 @@ module "app_secrets" {
 # RDS master credentials. The "database" secret tells it where the database is and which secret holds those
 # credentials: location metadata, not credentials, so unlike other app secrets its value is set here.
 
+# not-a-secret: host, port and the ARN of the master secret; credentials stay with RDS (tests/stack.tftest.hcl).
 resource "aws_secretsmanager_secret_version" "database" {
   secret_id = module.app_secrets.secret_arns["database"]
   secret_string = jsonencode({
