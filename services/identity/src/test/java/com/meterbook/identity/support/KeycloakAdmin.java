@@ -86,6 +86,40 @@ public final class KeycloakAdmin {
         .anyMatch(p -> p.get("alias").asString().equals(alias));
   }
 
+  public JsonNode user(UUID user) {
+    return get(REALM + "/users/" + user);
+  }
+
+  /** Links of the user, as identity provider alias to the subject at that provider. */
+  public Map<String, String> federatedIdentities(UUID user) {
+    return get(REALM + "/users/" + user + "/federated-identity")
+        .valueStream()
+        .collect(
+            Collectors.toMap(
+                f -> f.get("identityProvider").asString(), f -> f.get("userId").asString()));
+  }
+
+  /** Requests a token pair; returns the raw response status and body. */
+  public HttpResponse<String> tokenResponse(Map<String, String> form) {
+    String body =
+        form.entrySet().stream()
+            .map(e -> e.getKey() + "=" + encode(e.getValue()))
+            .collect(Collectors.joining("&"));
+    HttpRequest request =
+        HttpRequest.newBuilder(URI.create(keycloak.issuer() + "/protocol/openid-connect/token"))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build();
+    try {
+      return http.send(request, HttpResponse.BodyHandlers.ofString());
+    } catch (IOException e) {
+      throw new IllegalStateException(e);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException(e);
+    }
+  }
+
   public void setPassword(UUID user, String password) {
     send(
         "PUT",

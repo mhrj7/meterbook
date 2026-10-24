@@ -157,6 +157,96 @@ class KeycloakDirectoryTest {
   }
 
   @Test
+  void keeps_the_keycloak_user_in_step_with_scim() throws Exception {
+    String alias = unique("life");
+    UUID organization = directory.createOrganization(alias, alias, List.of(alias + ".test"));
+    UUID user = directory.createUser("ann@" + alias + ".test", "Ann", "A");
+    directory.addMember(organization, user);
+    admin.setPassword(user, "a-long-test-password");
+    admin.createPasswordClient("test-cli-" + alias, List.of("basic", "roles"));
+    var login =
+        java.util.Map.of(
+            "grant_type",
+            "password",
+            "client_id",
+            "test-cli-" + alias,
+            "username",
+            "ann@" + alias + ".test",
+            "password",
+            "a-long-test-password");
+    var tokens = admin.tokenResponse(login);
+    assertThat(tokens.statusCode()).isEqualTo(200);
+    String refresh =
+        new tools.jackson.databind.json.JsonMapper()
+            .readTree(tokens.body())
+            .get("refresh_token")
+            .asString();
+
+    directory.updateUser(user, "annie@" + alias + ".test", "Annie", "B");
+    var stored = admin.user(user);
+    assertThat(stored.get("email").asString()).isEqualTo("annie@" + alias + ".test");
+    assertThat(stored.get("username").asString()).isEqualTo("annie@" + alias + ".test");
+    assertThat(stored.get("firstName").asString()).isEqualTo("Annie");
+
+    directory.setEnabled(user, false);
+    directory.logout(user);
+    assertThat(admin.user(user).get("enabled").asBoolean()).isFalse();
+    var refreshed =
+        admin.tokenResponse(
+            java.util.Map.of(
+                "grant_type",
+                "refresh_token",
+                "client_id",
+                "test-cli-" + alias,
+                "refresh_token",
+                refresh));
+    assertThat(refreshed.statusCode()).isEqualTo(400); // the session is gone
+    var again = new java.util.HashMap<>(login);
+    again.put("username", "annie@" + alias + ".test");
+    assertThat(admin.tokenResponse(again).statusCode()).isEqualTo(400); // disabled
+    directory.setEnabled(user, true);
+    assertThat(admin.tokenResponse(again).statusCode()).isEqualTo(200);
+
+    directory.removeMember(organization, user);
+    directory.removeMember(organization, user);
+    assertThat(directory.organizationsOf(user)).isEmpty();
+  }
+
+  @Test
+  void links_a_user_to_an_identity_provider_and_replaces_the_link() throws Exception {
+    String alias = unique("link");
+    UUID organization = directory.createOrganization(alias, alias, List.of(alias + ".test"));
+    String provider = "sso-" + UUID.randomUUID();
+    String certificate =
+        new String(
+                KeycloakDirectoryTest.class
+                    .getResourceAsStream("/certs/idp-valid.crt")
+                    .readAllBytes(),
+                java.nio.charset.StandardCharsets.US_ASCII)
+            .replace("-----BEGIN CERTIFICATE-----", "")
+            .replace("-----END CERTIFICATE-----", "")
+            .replaceAll("\\s", "");
+    directory.createSamlProvider(
+        organization,
+        new Directory.SamlProvider(
+            provider,
+            "X",
+            KEYCLOAK.issuer() + "/sso/x",
+            "https://idp",
+            "https://idp/sso",
+            certificate));
+    UUID user = directory.createUser("bob@" + alias + ".test", "", "");
+
+    directory.linkIdentity(user, provider, "bob@" + alias + ".test");
+    assertThat(admin.federatedIdentities(user))
+        .containsExactly(java.util.Map.entry(provider, "bob@" + alias + ".test"));
+
+    directory.linkIdentity(user, provider, "robert@" + alias + ".test");
+    assertThat(admin.federatedIdentities(user))
+        .containsExactly(java.util.Map.entry(provider, "robert@" + alias + ".test"));
+  }
+
+  @Test
   void renews_its_token_when_it_expires() {
     directory.findUserByEmail("nobody@example.test");
     CLOCK.advance(Duration.ofHours(1));

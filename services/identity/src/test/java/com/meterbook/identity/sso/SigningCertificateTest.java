@@ -13,9 +13,9 @@ import java.time.ZoneOffset;
 import java.util.Base64;
 import org.junit.jupiter.api.Test;
 
-class SigningCertificateTest {
+public class SigningCertificateTest {
 
-  static String pem(String name) {
+  public static String pem(String name) {
     try (InputStream in = SigningCertificateTest.class.getResourceAsStream("/certs/" + name)) {
       return new String(in.readAllBytes(), StandardCharsets.US_ASCII);
     } catch (IOException e) {

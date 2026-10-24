@@ -21,6 +21,10 @@ public final class FakeDirectory implements Directory {
   public final Map<UUID, Set<String>> roles = new ConcurrentHashMap<>();
   public final Map<String, SamlProvider> providers = new ConcurrentHashMap<>();
   public final Map<String, UUID> providerOrganizations = new ConcurrentHashMap<>();
+  public final Map<UUID, Boolean> enabled = new ConcurrentHashMap<>();
+  public final Map<UUID, Integer> logouts = new ConcurrentHashMap<>();
+  public final Map<UUID, Map<String, String>> links = new ConcurrentHashMap<>();
+  public final Map<UUID, List<String>> profiles = new ConcurrentHashMap<>();
   public final Map<String, AtomicInteger> calls = new ConcurrentHashMap<>();
   private final Map<String, RuntimeException> failures = new HashMap<>();
   private final Map<String, Runnable> hooks = new HashMap<>();
@@ -32,6 +36,10 @@ public final class FakeDirectory implements Directory {
     roles.clear();
     providers.clear();
     providerOrganizations.clear();
+    enabled.clear();
+    logouts.clear();
+    links.clear();
+    profiles.clear();
     calls.clear();
     failures.clear();
     hooks.clear();
@@ -91,6 +99,8 @@ public final class FakeDirectory implements Directory {
     enter("createUser");
     UUID id = UUID.randomUUID();
     users.put(id, email);
+    enabled.put(id, true);
+    profiles.put(id, List.of(email, firstName, lastName));
     return id;
   }
 
@@ -132,5 +142,39 @@ public final class FakeDirectory implements Directory {
     enter("deleteIdentityProvider");
     providers.remove(alias);
     providerOrganizations.remove(alias);
+  }
+
+  @Override
+  public void updateUser(UUID user, String email, String firstName, String lastName) {
+    enter("updateUser");
+    users.put(user, email);
+    profiles.put(user, List.of(email, firstName, lastName));
+  }
+
+  @Override
+  public void setEnabled(UUID user, boolean value) {
+    enter("setEnabled");
+    enabled.put(user, value);
+  }
+
+  @Override
+  public void logout(UUID user) {
+    enter("logout");
+    logouts.merge(user, 1, Integer::sum);
+  }
+
+  @Override
+  public void removeMember(UUID organization, UUID user) {
+    enter("removeMember");
+    Set<UUID> of = members.get(user);
+    if (of != null) {
+      of.remove(organization);
+    }
+  }
+
+  @Override
+  public void linkIdentity(UUID user, String providerAlias, String subject) {
+    enter("linkIdentity");
+    links.computeIfAbsent(user, u -> new ConcurrentHashMap<>()).put(providerAlias, subject);
   }
 }

@@ -275,8 +275,10 @@ class SsoConnectionApiTest {
 
   @Test
   void plain_http_idps_are_allowed_only_when_configured() {
-    var strict = new SsoConnectionService(null, null, null, new SsoProperties(ISSUER, false), null);
-    var lenient = new SsoConnectionService(null, null, null, new SsoProperties(ISSUER, true), null);
+    var strict =
+        new SsoConnectionService(null, null, null, null, new SsoProperties(ISSUER, false), null);
+    var lenient =
+        new SsoConnectionService(null, null, null, null, new SsoProperties(ISSUER, true), null);
 
     lenient.requireAllowedUrl("http://localhost:8180/realms/acme-idp/protocol/saml");
     lenient.requireAllowedUrl("https://idp.test/sso");
