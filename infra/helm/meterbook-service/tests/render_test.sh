@@ -50,6 +50,10 @@ has 'mountPath: /tmp' "$out" && ok "only /tmp is writable (emptyDir)" || bad "on
 has 'maxUnavailable: 0' "$out" && ok "rolling update never drops below desired replicas" || bad "rolling update never drops below desired replicas"
 has 'topologyKey: topology.kubernetes.io/zone' "$out" && ok "replicas spread across zones" || bad "replicas spread across zones"
 has 'policyTypes: \["Ingress"\]' "$out" && ok "network policy restricts ingress" || bad "network policy restricts ingress"
+policy=$(awk 'BEGIN{RS="---"} /kind: NetworkPolicy/' <<<"$out")
+has 'port: 15008' "$policy" && ok "network policy admits mesh mTLS (HBONE, 15008) from the same peers" || bad "network policy admits mesh mTLS (HBONE, 15008) from the same peers"
+has 'cidr: 169.254.7.127/32' "$policy" && ok "network policy admits kubelet probes rewritten by the mesh" || bad "network policy admits kubelet probes rewritten by the mesh"
+[ "$(count 'cidr:' "$policy")" -eq 1 ] && ok "no other address ranges are admitted" || bad "no other address ranges are admitted"
 has 'unhealthyPodEvictionPolicy: AlwaysAllow' "$out" && ok "PDB never blocks drains on unhealthy pods" || bad "PDB never blocks drains on unhealthy pods"
 has 'podAntiAffinity:' "$out" && ok "replicas prefer different nodes" || bad "replicas prefer different nodes"
 for probe in startupProbe livenessProbe readinessProbe; do

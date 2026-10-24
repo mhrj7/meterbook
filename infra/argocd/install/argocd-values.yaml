@@ -1,6 +1,13 @@
 # Values for the argo-cd chart, shared by Terraform (infra/terraform/modules/gitops) and the GitOps end-to-end test,
 # so the test installs ArgoCD exactly as the clusters do. Terraform layers the reconciliation interval on top.
 configs:
+  # Helm charts served from an OCI registry must be declared as such (ADR-0011: Istio's charts). Public, no credentials.
+  repositories:
+    istio-charts:
+      name: istio
+      type: helm
+      url: ghcr.io/istio/release/charts
+      enableOCI: "true"
   params:
     # TLS terminates at kubectl port-forward / a future ingress; the server is never exposed publicly.
     server.insecure: true

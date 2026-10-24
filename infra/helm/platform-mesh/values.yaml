@@ -1,0 +1,5 @@
+# Application namespaces enrolled in the ambient mesh. Platform namespaces (argocd, external-secrets, kube-system,
+# istio-system) stay outside it.
+namespaces: []
+# Istio's root namespace: a PeerAuthentication there applies to the whole mesh.
+rootNamespace: istio-system
