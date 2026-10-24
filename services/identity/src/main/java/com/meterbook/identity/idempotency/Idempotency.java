@@ -47,10 +47,31 @@ public class Idempotency {
       String operation,
       Object request,
       Supplier<ResponseEntity<?>> action) {
+    return execute(scope, key, operation, request, Storage.STORE_RESPONSE, action);
+  }
+
+  /** Whether a successful response may be kept for replay. */
+  public enum Storage {
+    STORE_RESPONSE,
+    /**
+     * The response holds a secret shown once: only its status and Location are kept, and a repeat
+     * of the request is 409 {@code idempotency_key_used} pointing at what was created.
+     */
+    DO_NOT_STORE_RESPONSE
+  }
+
+  /** Like {@link #execute(String, String, String, Object, Supplier)}, choosing what is stored. */
+  public ResponseEntity<?> execute(
+      String scope,
+      String key,
+      String operation,
+      Object request,
+      Storage storage,
+      Supplier<ResponseEntity<?>> action) {
     validate(key);
     String hash = hash(operation, request);
     return switch (store.claim(scope, key, hash)) {
-      case IdempotencyStore.Claim.Started started -> run(scope, key, action);
+      case IdempotencyStore.Claim.Started started -> run(scope, key, storage, action);
       case IdempotencyStore.Claim.Replay replay -> replay(replay.response());
       case IdempotencyStore.Claim.InFlight inFlight ->
           throw ApiException.conflict(
@@ -70,7 +91,8 @@ public class Idempotency {
     store.purgeExpired();
   }
 
-  private ResponseEntity<?> run(String scope, String key, Supplier<ResponseEntity<?>> action) {
+  private ResponseEntity<?> run(
+      String scope, String key, Storage storage, Supplier<ResponseEntity<?>> action) {
     ResponseEntity<?> response;
     try {
       response = action.get();
@@ -88,12 +110,19 @@ public class Idempotency {
         key,
         new IdempotencyStore.StoredResponse(
             response.getStatusCode().value(),
-            json.writeValueAsString(response.getBody()),
+            storage == Storage.STORE_RESPONSE ? json.writeValueAsString(response.getBody()) : null,
             location));
     return response;
   }
 
   private static ResponseEntity<?> replay(IdempotencyStore.StoredResponse stored) {
+    if (stored.body() == null) {
+      throw ApiException.conflict(
+          "idempotency_key_used",
+          "this request already succeeded and its response is shown once"
+              + (stored.location() == null ? "" : ": " + stored.location()),
+          null);
+    }
     ResponseEntity.BodyBuilder builder =
         ResponseEntity.status(stored.status())
             .contentType(MediaType.APPLICATION_JSON)

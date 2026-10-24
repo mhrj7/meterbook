@@ -8,6 +8,7 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
@@ -40,6 +41,7 @@ public class SecurityConfig {
   }
 
   @Bean
+  @Order(2)
   SecurityFilterChain api(HttpSecurity http, ApiErrors errors) throws Exception {
     return http.authorizeHttpRequests(
             auth ->
