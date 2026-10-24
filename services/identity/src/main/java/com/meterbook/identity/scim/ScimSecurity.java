@@ -1,5 +1,6 @@
 package com.meterbook.identity.scim;
 
+import com.meterbook.identity.web.BearerTokens;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -56,18 +57,16 @@ public class ScimSecurity {
     protected void doFilterInternal(
         HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {
-      String header = request.getHeader("Authorization");
-      if (header != null && header.regionMatches(true, 0, "Bearer ", 0, 7)) {
-        tokens
-            .authenticate(header.substring(7).trim())
-            .ifPresent(
-                holder -> {
-                  var context = SecurityContextHolder.createEmptyContext();
-                  context.setAuthentication(
-                      new ScimAuthentication(holder.tenantId(), holder.tokenId()));
-                  SecurityContextHolder.setContext(context);
-                });
-      }
+      // Authenticated only by a live token in the database; the header alone decides nothing.
+      BearerTokens.of(request)
+          .flatMap(tokens::authenticate)
+          .ifPresent(
+              holder -> {
+                var context = SecurityContextHolder.createEmptyContext();
+                context.setAuthentication(
+                    new ScimAuthentication(holder.tenantId(), holder.tokenId()));
+                SecurityContextHolder.setContext(context);
+              });
       chain.doFilter(request, response);
     }
   }

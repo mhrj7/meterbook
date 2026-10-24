@@ -39,7 +39,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: none
-          queries: security-extended
+          config-file: ./.github/codeql/codeql-config.yml
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           category: /language:${{ matrix.language }}
@@ -48,11 +48,19 @@ jobs:
         run: |
           python3 - <<'PY'
           import glob, json, sys
-          rules, high = {}, []
-          for path in glob.glob("sarif/*.sarif"):
+          # Rule metadata lives with the query packs (tool.extensions), not with the driver.
+          paths, rules, high = glob.glob("sarif/*.sarif"), {}, []
+          if not paths:
+              sys.exit("::error::no SARIF written: the gate would pass without checking anything")
+          for path in paths:
               for run in json.load(open(path))["runs"]:
-                  for rule in run["tool"]["driver"].get("rules", []):
-                      rules[rule["id"]] = float(rule.get("properties", {}).get("security-severity", 0) or 0)
+                  for component in [run["tool"]["driver"], *run["tool"].get("extensions", [])]:
+                      for rule in component.get("rules", []):
+                          severity = rule.get("properties", {}).get("security-severity")
+                          if severity is not None:
+                              rules[rule["id"]] = float(severity)
+                  if not rules:
+                      sys.exit("::error::no rule carries a security-severity: the gate cannot judge results")
                   for result in run.get("results", []):
                       if rules.get(result["ruleId"], 0) >= 7.0:
                           location = result["locations"][0]["physicalLocation"]

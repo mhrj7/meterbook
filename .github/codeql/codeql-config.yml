@@ -1,0 +1,11 @@
+# CodeQL configuration (TC-PLT-005). security-extended, with one exclusion:
+#   java/spring-disabled-csrf-protection: CSRF needs a credential the browser attaches by itself (a cookie). Every
+#   security chain here is stateless and takes credentials only from the Authorization header, so CSRF protection
+#   would protect nothing. NoAmbientCredentialsTest keeps that true: no chain creates a session or sets a cookie, and
+#   a cookie alone authenticates nothing. Revisit this exclusion before any cookie-based login is added.
+name: meterbook
+queries:
+  - uses: security-extended
+query-filters:
+  - exclude:
+      id: java/spring-disabled-csrf-protection
