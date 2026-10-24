@@ -16,7 +16,11 @@ ok()  { echo "PASS  $*"; pass=$((pass + 1)); }
 bad() { echo "FAIL  $*"; fail=$((fail + 1)); }
 check() { # check <description> <command...>: passes when the command exits 0
   local what=$1; shift
-  if "$@" >/dev/null 2>&1; then ok "$what"; else bad "$what"; fi
+  if [ "$1" = eq ]; then # say what was found; hosts and addresses stay out of the public log
+    if [ "$2" = "$3" ]; then ok "$what"; else
+      bad "$what (got '$(printf %s "$2" | head -c 300 | tr '\n' ' ' | sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g; s/[A-Za-z0-9.-]+\.amazonaws\.com/<aws-host>/g')', want '$3')"
+    fi
+  elif "$@" >/dev/null 2>&1; then ok "$what"; else bad "$what"; fi
 }
 eq() { [ "$1" = "$2" ]; }
 
