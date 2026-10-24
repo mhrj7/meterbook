@@ -125,12 +125,16 @@ ok "mesh-wide PeerAuthentication STRICT"
 if probe meterbook-dev plaintext-client istio.io/dataplane-mode=none >/dev/null 2>&1; then
   die "a plaintext client reached smoke despite strict mTLS"
 fi
-ok "plaintext request from a pod outside the mesh rejected, although the NetworkPolicy admits it"
+# It must be the mesh that refused it, not some other failure: ztunnel names the strict policy.
+wait_until 60 "ztunnel to log the refused plaintext connection" bash -c \
+  "kubectl -n istio-system logs -l app=ztunnel --since=5m --tail=-1 2>/dev/null | grep -F 'src.workload=\"plaintext-client\"' \
+     | grep -qF 'policy rejection: explicitly denied by: istio-system/istio_converted_static_strict'"
+ok "plaintext request from a pod outside the mesh rejected by strict mTLS, although the NetworkPolicy admits it"
 probe meterbook-dev mesh-client >/dev/null || die "an in-mesh client could not reach smoke"
 ok "in-mesh request to smoke succeeds"
 # ztunnel logs every connection it terminates with the peer's verified identity: proof the request went over mTLS.
 wait_until 60 "ztunnel to log the mTLS connection" bash -c \
-  "kubectl -n istio-system logs ds/ztunnel --all-containers --since=5m 2>/dev/null | grep -F 'dst.workload=\"smoke-' \
+  "kubectl -n istio-system logs -l app=ztunnel --since=5m --tail=-1 2>/dev/null | grep -F 'dst.workload=\"smoke-' \
      | grep -qF 'src.identity=\"spiffe://cluster.local/ns/meterbook-dev/sa/default\"'"
 ok "ztunnel shows the request arriving over mTLS with the client's SPIFFE identity"
 
