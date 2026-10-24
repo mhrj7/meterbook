@@ -74,10 +74,64 @@ module "app_secrets" {
 
   name                       = local.name
   cluster_name               = module.cluster.cluster_name
-  secret_names               = var.app_secret_names
+  secret_names               = concat(var.app_secret_names, ["database"])
   extra_readable_secret_arns = compact([module.postgres.master_user_secret_arn])
   # Disposable envs are recreated with the same secret names, which a recovery window would block.
   recovery_window_days     = var.disposable ? 0 : 30
   kms_deletion_window_days = var.disposable ? 7 : 30
   tags                     = local.tags
+}
+
+# --- database bootstrap (MB-T07) -----------------------------------------------------------------------------------
+# Services get their own database roles from a Job in the cluster (db-bootstrap), the only thing that ever reads the
+# RDS master credentials. The "database" secret tells it where the database is and which secret holds those
+# credentials: location metadata, not credentials, so unlike other app secrets its value is set here.
+
+# not-a-secret: host, port and the ARN of the master secret; credentials stay with RDS (tests/stack.tftest.hcl).
+resource "aws_secretsmanager_secret_version" "database" {
+  secret_id = module.app_secrets.secret_arns["database"]
+  secret_string = jsonencode({
+    host              = module.postgres.address
+    port              = tostring(module.postgres.port)
+    master_secret_arn = module.postgres.master_user_secret_arn
+  })
+}
+
+resource "aws_iam_role" "db_bootstrap" {
+  name        = "${local.name}-db-bootstrap"
+  description = "db-bootstrap Job in ${local.name}: reads the RDS master credentials (EKS Pod Identity)"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "EksPodIdentity"
+      Effect    = "Allow"
+      Principal = { Service = "pods.eks.amazonaws.com" }
+      Action    = ["sts:AssumeRole", "sts:TagSession"]
+    }]
+  })
+  tags = local.tags
+}
+
+resource "aws_iam_role_policy" "db_bootstrap" {
+  name = "read-master-credentials"
+  role = aws_iam_role.db_bootstrap.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ReadMasterCredentialsOnly"
+      Effect   = "Allow"
+      Action   = ["secretsmanager:GetSecretValue"]
+      Resource = [module.postgres.master_user_secret_arn]
+    }]
+  })
+}
+
+resource "aws_eks_pod_identity_association" "db_bootstrap" {
+  for_each = toset(var.app_namespaces)
+
+  cluster_name    = module.cluster.cluster_name
+  namespace       = each.value
+  service_account = "db-bootstrap"
+  role_arn        = aws_iam_role.db_bootstrap.arn
+  tags            = local.tags
 }

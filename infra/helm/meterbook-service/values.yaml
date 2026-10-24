@@ -14,6 +14,8 @@ image:
 command: []
 args: []
 containerPort: 8080
+# Optional second port for health and metrics (never exposed by the Service); 0 = none.
+managementPort: 0
 
 # Plain environment variables (name/value). Secrets never go here.
 env: []
@@ -23,6 +25,10 @@ envFromSecrets: []
 replicas: 2             # ignored when autoscaling is enabled
 terminationGracePeriodSeconds: 30
 tmpSizeLimit: 64Mi
+# More writable directories, each an emptyDir: [{name: data, path: /opt/app/data, sizeLimit: 128Mi}]
+writablePaths: []
+# ConfigMaps mounted read-only as directories: [{name: realm, configMap: keycloak-realm, path: /opt/app/import}]
+configFiles: []
 
 securityContext:
   runAsUser: 10001      # any non-root UID; 0 is rejected
@@ -35,6 +41,7 @@ resources:
     memory: 512Mi       # memory limit required; no CPU limit by default (avoids throttling)
 
 probes:
+  port: http            # or "management" (needs managementPort)
   startup:
     path: /healthz
     failureThreshold: 30

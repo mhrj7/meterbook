@@ -42,3 +42,13 @@ output "app_secrets" {
     eso_role_arn = module.app_secrets.eso_role_arn
   }
 }
+
+output "db_bootstrap" {
+  description = "Role and policy of the db-bootstrap Job (exposed for tests and audits)."
+  value = {
+    role_arn   = aws_iam_role.db_bootstrap.arn
+    policy     = aws_iam_role_policy.db_bootstrap.policy
+    namespaces = sort([for a in aws_eks_pod_identity_association.db_bootstrap : a.namespace])
+    secret     = module.app_secrets.secret_names["database"]
+  }
+}

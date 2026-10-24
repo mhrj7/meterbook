@@ -1,0 +1,64 @@
+# identity-stack: Keycloak + identity for one environment. Environment-specific values (hostnames, database names,
+# image digests) live in values-<env>.yaml; everything here is shared.
+
+environment: ""                 # dev | staging | prod (required)
+region: eu-north-1
+secretStore: aws-secrets-manager
+# Which environment's database this one uses; staging shares the dev cluster and database (ADR-0006).
+databaseSecretEnvironment: ""
+
+dbBootstrap:
+  image:
+    repository: ghcr.io/mhrj7/meterbook-db-bootstrap
+    digest: ""                  # required
+
+keycloak:
+  name: keycloak
+  image:
+    repository: ghcr.io/mhrj7/meterbook-keycloak
+    digest: ""                  # required
+  args: ["--import-realm"]
+  containerPort: 8080
+  managementPort: 9000
+  securityContext:
+    runAsUser: 1000
+  probes:
+    port: management
+    startup: {path: /health/started, failureThreshold: 60}
+    liveness: {path: /health/live}
+    readiness: {path: /health/ready}
+  writablePaths:
+    - {name: data, path: /opt/keycloak/data, sizeLimit: 256Mi}
+  configFiles:
+    - {name: realm, configMap: keycloak-realm, path: /opt/keycloak/data/import}
+  envFromSecrets:
+    - keycloak-clients          # MB_IDENTITY_CLIENT_SECRET, MB_OPERATOR_CLIENT_SECRET (realm placeholders)
+    - keycloak-admin            # KC_BOOTSTRAP_ADMIN_PASSWORD
+  resources:
+    requests: {cpu: 250m, memory: 768Mi}
+    limits: {memory: 1Gi}
+  autoscaling: {enabled: false}
+  replicas: 1
+  pdb: {enabled: false}         # one replica in dev and staging; a PDB would block node drains
+  terminationGracePeriodSeconds: 30
+
+identity:
+  name: identity
+  image:
+    repository: ghcr.io/mhrj7/meterbook-identity
+    digest: ""                  # required
+  containerPort: 8080
+  managementPort: 9090
+  securityContext:
+    runAsUser: 65532            # distroless nonroot
+  probes:
+    port: http
+    startup: {path: /livez, failureThreshold: 60}
+    liveness: {path: /livez}
+    readiness: {path: /readyz}
+  resources:
+    requests: {cpu: 100m, memory: 384Mi}
+    limits: {memory: 768Mi}
+  autoscaling: {enabled: false}
+  replicas: 1
+  pdb: {enabled: false}

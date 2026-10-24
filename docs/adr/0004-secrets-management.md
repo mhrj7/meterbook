@@ -57,6 +57,16 @@ We will use **Option A**:
 - **Follow-up work:** MB-T06 (install ESO and this chart through ArgoCD; wire the RDS secret ARN), MB-T07+ (services
   consume the synced secrets).
 
+## Amendment (MB-T07, 2026-10-24)
+
+- **Generated in the cluster:** service database passwords and Keycloak client secrets are generated in the cluster
+  (ESO `Password` generator, created once); they never exist outside Kubernetes Secrets.
+- **The RDS master credentials** are read only by the `db-bootstrap` Job, through a role that can read that one
+  secret.
+- **One reviewed exception to "no values through Terraform":** `meterbook-<env>/database` holds location metadata
+  (host, port, master secret ARN), no credentials. The CI guard accepts a secret value in Terraform only when marked
+  `# not-a-secret: <reason>`, and a test asserts the secret's keys.
+
 ## How we will know it was wrong
 
 We need per-request dynamic credentials (e.g. short-lived database users per service), or the number of secrets

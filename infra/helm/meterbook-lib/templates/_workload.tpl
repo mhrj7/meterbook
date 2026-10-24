@@ -90,6 +90,12 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
+            {{- if .Values.managementPort }}
+            # Health and metrics only; the Service never exposes it.
+            - name: management
+              containerPort: {{ .Values.managementPort }}
+              protocol: TCP
+            {{- end }}
           {{- with .Values.env }}
           env:
             {{- toYaml . | nindent 12 }}
@@ -112,31 +118,50 @@ spec:
           startupProbe:
             httpGet:
               path: {{ .Values.probes.startup.path }}
-              port: http
+              port: {{ .Values.probes.port | default "http" }}
             periodSeconds: 5
             failureThreshold: {{ .Values.probes.startup.failureThreshold }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.liveness.path }}
-              port: http
+              port: {{ .Values.probes.port | default "http" }}
             periodSeconds: 10
             timeoutSeconds: 2
             failureThreshold: 3
           readinessProbe:
             httpGet:
               path: {{ .Values.probes.readiness.path }}
-              port: http
+              port: {{ .Values.probes.port | default "http" }}
             periodSeconds: 5
             timeoutSeconds: 2
             failureThreshold: 3
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            {{- range .Values.writablePaths }}
+            - name: {{ .name }}
+              mountPath: {{ .path }}
+            {{- end }}
+            {{- range .Values.configFiles }}
+            - name: {{ .name }}
+              mountPath: {{ .path }}
+              readOnly: true
+            {{- end }}
       volumes:
-        # The root filesystem is read-only; /tmp is the only writable path.
+        # The root filesystem is read-only; /tmp and the declared writablePaths are the only writable paths.
         - name: tmp
           emptyDir:
             sizeLimit: {{ .Values.tmpSizeLimit }}
+        {{- range .Values.writablePaths }}
+        - name: {{ .name }}
+          emptyDir:
+            sizeLimit: {{ .sizeLimit | default "64Mi" }}
+        {{- end }}
+        {{- range .Values.configFiles }}
+        - name: {{ .name }}
+          configMap:
+            name: {{ .configMap }}
+        {{- end }}
 {{- end }}
 
 {{- define "meterbook-lib.service" -}}

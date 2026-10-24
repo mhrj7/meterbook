@@ -1,0 +1,20 @@
+# A workload shaped like Keycloak: probes on a management port, extra writable paths, a ConfigMap mount.
+name: kc
+image:
+  repository: ghcr.io/mhrj7/meterbook-keycloak
+  digest: "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+containerPort: 8080
+managementPort: 9000
+securityContext:
+  runAsUser: 1000
+probes:
+  port: management
+  startup: {path: /health/started, failureThreshold: 60}
+  liveness: {path: /health/live}
+  readiness: {path: /health/ready}
+writablePaths:
+  - {name: data, path: /opt/keycloak/data, sizeLimit: 256Mi}
+configFiles:
+  - {name: realm, configMap: keycloak-realm, path: /opt/keycloak/data/import}
+autoscaling: {enabled: false}
+replicas: 1
