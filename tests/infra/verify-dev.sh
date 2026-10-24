@@ -224,7 +224,10 @@ fi
 # --- Identity on EKS (MB-T07) ------------------------------------------------------------------------------------
 # Keycloak and identity per environment, deployed by ArgoCD: generated secrets, the db-bootstrap Job, the workloads.
 # The API is exercised from inside the cluster (no public ingress yet), with the same image the bootstrap uses.
-TOOLS_IMAGE=$(kubectl -n meterbook-dev get job db-bootstrap -o 'jsonpath={.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+# The tools image is the db-bootstrap image pinned for dev (psql, aws, curl, jq), so it exists even if the Job does not.
+TOOLS_DIGEST=$(awk '/^dbBootstrap:/{f=1} f && /digest:/ {gsub(/"/, "", $2); print $2; exit}' \
+  "$(dirname "$0")/../../infra/helm/identity-stack/values-dev.yaml")
+TOOLS_IMAGE="ghcr.io/mhrj7/meterbook-db-bootstrap@$TOOLS_DIGEST"
 job_done() { [ "$(kubectl -n "$1" get job db-bootstrap -o 'jsonpath={.status.succeeded}')" = 1 ]; }
 
 for env in dev staging; do
@@ -243,7 +246,7 @@ done
 in_cluster() { # in_cluster <name> <namespace> <env-json> <script>: run a script in the tools image, print its output
   kubectl -n "$2" run "$1" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --command \
     --overrides="{\"spec\":{\"securityContext\":{\"runAsNonRoot\":true,\"runAsUser\":10001,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"containers\":[{\"name\":\"$1\",\"image\":\"$TOOLS_IMAGE\",\"command\":[\"bash\",\"-c\",$(jq -Rs . <<<"$4")],\"env\":$3,\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]}}}]}}" \
-    -- true 2>/dev/null
+    -- true 2>/dev/null || true
 }
 secret_env() { # secret_env <var> <secret> <key>
   printf '{"name":"%s","valueFrom":{"secretKeyRef":{"name":"%s","key":"%s"}}}' "$1" "$2" "$3"

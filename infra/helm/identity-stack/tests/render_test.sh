@@ -5,8 +5,17 @@
 #   infra/helm/identity-stack/tests/render_test.sh
 set -euo pipefail
 
-CHART="$(cd "$(dirname "$0")/.." && pwd)"
-ROOT="$(cd "$CHART/../../.." && pwd)"
+SOURCE="$(cd "$(dirname "$0")/.." && pwd)"
+ROOT="$(cd "$SOURCE/../../.." && pwd)"
+# Render from a clean copy, the way ArgoCD sees the repository: no previously built charts/ folders anywhere.
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+mkdir -p "$WORK/infra/helm" "$WORK/infra/keycloak"
+for chart in identity-stack meterbook-service meterbook-lib; do
+  rsync -a --exclude charts/ --exclude Chart.lock "$ROOT/infra/helm/$chart" "$WORK/infra/helm/"
+done
+cp "$ROOT/infra/keycloak/realm-meterbook.json" "$WORK/infra/keycloak/"
+CHART="$WORK/infra/helm/identity-stack"
 pass=0
 fail=0
 
@@ -30,6 +39,13 @@ expect_render_fails() {
 }
 
 helm dependency build "$CHART" >/dev/null
+for env in dev staging; do
+  if ! helm template identity "$CHART" -f "$CHART/values-$env.yaml" >/dev/null 2>"$WORK/render-$env.err"; then
+    echo "FAIL  renders from a clean checkout for $env (as ArgoCD does)"; grep -v 'symbolic link' "$WORK/render-$env.err"
+    exit 1
+  fi
+  ok "renders from a clean checkout for $env (as ArgoCD does)"
+done
 DEV=$(render -f "$CHART/values-dev.yaml")
 STAGING=$(render -f "$CHART/values-staging.yaml")
 

@@ -82,6 +82,12 @@ for app in platform-external-secrets smoke-dev smoke-staging; do
   ok "$app Healthy"
 done
 
+# Every Application must at least render: a ComparisonError means ArgoCD could not build its manifests.
+errors=$(kubectl -n argocd get applications -o json \
+  | jq -r '.items[] | select(any(.status.conditions[]?; .type == "ComparisonError")) | .metadata.name')
+if [ -n "$errors" ]; then die "ArgoCD cannot render: $errors"; fi
+ok "every Application renders (no ComparisonError)"
+
 step "2. The smoke service runs hardened in both namespaces"
 for ns in meterbook-dev meterbook-staging; do
   wait_until 300 "smoke 2/2 in $ns" deploy_ready "$ns" smoke 2
