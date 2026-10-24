@@ -32,6 +32,8 @@ jobs:
         env: [dev, prod]
     defaults:
       run:
+        # Job defaults replace the workflow defaults: repeat the shell, or pipefail is lost.
+        shell: bash
         working-directory: infra/terraform/envs/${{ matrix.env }}
     env:
       TF_IN_AUTOMATION: "true"

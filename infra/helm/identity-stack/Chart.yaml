@@ -4,6 +4,11 @@ description: Keycloak and the identity service for one environment, with their d
 type: application
 version: 0.1.0
 dependencies:
+  # The library the two meterbook-service releases render with. ArgoCD builds dependencies from a clean checkout,
+  # where a subchart's own dependencies are not packaged, so the library is declared here too.
+  - name: meterbook-lib
+    version: 0.1.0
+    repository: file://../meterbook-lib
   - name: meterbook-service
     alias: keycloak
     version: 0.1.0
