@@ -12,7 +12,7 @@ spec:
   generators:
     - git:
         repoURL: https://github.com/mhrj7/meterbook.git
-        revision: 2c2a5655e7bc3d08b802a026b78a35fa2cd792c2
+        revision: 6f80316322508541e584c5cadc5a1463b1f97714
         files:
           - path: "deploy/services/*/prod.yaml"
   template:
@@ -22,7 +22,7 @@ spec:
       project: meterbook-apps
       source:
         repoURL: https://github.com/mhrj7/meterbook.git
-        targetRevision: 2c2a5655e7bc3d08b802a026b78a35fa2cd792c2
+        targetRevision: 6f80316322508541e584c5cadc5a1463b1f97714
         path: infra/helm/meterbook-service
         helm:
           releaseName: "{{ .path.basename }}"
