@@ -402,5 +402,23 @@
         }
       }
     ]
-  }
+  },
+  "authenticationFlows": [
+    {
+      "alias": "meterbook first broker login",
+      "description": "First SSO sign-in: create the user if the email is unused. Never link to an existing account by email; a tenant's IdP could assert anyone's email. SCIM links its users explicitly.",
+      "providerId": "basic-flow",
+      "topLevel": true,
+      "builtIn": false,
+      "authenticationExecutions": [
+        {
+          "authenticator": "idp-create-user-if-unique",
+          "requirement": "REQUIRED",
+          "priority": 10,
+          "autheticatorFlow": false,
+          "userSetupAllowed": false
+        }
+      ]
+    }
+  ]
 }

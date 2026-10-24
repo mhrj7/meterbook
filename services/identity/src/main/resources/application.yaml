@@ -46,6 +46,9 @@ identity:
     client-id: meterbook-identity
     client-secret: ${KEYCLOAK_CLIENT_SECRET}
     timeout: 2s
+  sso:
+    public-issuer: ${spring.security.oauth2.resourceserver.jwt.issuer-uri}
+    allow-insecure-idp-urls: ${SSO_ALLOW_INSECURE_IDP_URLS:false}
 
 server:
   port: 8080

@@ -8,7 +8,10 @@ import org.springframework.web.client.RestClient;
 
 /** Wires the Keycloak-backed {@link Directory}. */
 @Configuration
-@EnableConfigurationProperties(KeycloakProperties.class)
+@EnableConfigurationProperties({
+  KeycloakProperties.class,
+  com.meterbook.identity.sso.SsoProperties.class
+})
 public class DirectoryConfig {
 
   @Bean

@@ -202,6 +202,84 @@ public final class KeycloakDirectory implements Directory {
         });
   }
 
+  /**
+   * The realm's first-sign-in flow: create the user if the email is unused, never link by email.
+   */
+  static final String FIRST_BROKER_LOGIN_FLOW = "meterbook first broker login";
+
+  @Override
+  public void createSamlProvider(UUID organization, SamlProvider provider) {
+    Map<String, String> config =
+        Map.ofEntries(
+            Map.entry("entityId", provider.serviceProviderEntityId()),
+            Map.entry("idpEntityId", provider.idpEntityId()),
+            Map.entry("singleSignOnServiceUrl", provider.ssoUrl()),
+            Map.entry("signingCertificate", provider.signingCertificate()),
+            Map.entry("validateSignature", "true"),
+            Map.entry("wantAssertionsSigned", "true"),
+            Map.entry("wantAuthnRequestsSigned", "true"),
+            Map.entry("postBindingResponse", "true"),
+            Map.entry("postBindingAuthnRequest", "true"),
+            Map.entry(
+                "nameIDPolicyFormat", "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"),
+            Map.entry("principalType", "SUBJECT"),
+            Map.entry("syncMode", "FORCE"),
+            Map.entry("allowedClockSkew", "30"),
+            // Route sign-ins for any of the organization's domains to this IdP.
+            Map.entry("kc.org.domain", "ANY"),
+            Map.entry("kc.org.broker.redirect.mode.email-matches", "true"));
+    call(
+        () ->
+            http.post()
+                .uri(admin + "/identity-provider/instances")
+                .headers(this::bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(
+                    Map.of(
+                        "alias",
+                        provider.alias(),
+                        "displayName",
+                        provider.displayName(),
+                        "providerId",
+                        "saml",
+                        "enabled",
+                        true,
+                        // The IdP proves the email; the domain belongs to this tenant only.
+                        "trustEmail",
+                        true,
+                        "hideOnLogin",
+                        true,
+                        "firstBrokerLoginFlowAlias",
+                        FIRST_BROKER_LOGIN_FLOW,
+                        "config",
+                        config))
+                .retrieve()
+                .toBodilessEntity());
+    // Linking twice is a 409 that changes nothing, so this is safe to retry.
+    retried(
+        () -> {
+          try {
+            http.post()
+                .uri(admin + "/organizations/" + organization + "/identity-providers")
+                .headers(this::bearer)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(provider.alias())
+                .retrieve()
+                .toBodilessEntity();
+          } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() != 409) {
+              throw e;
+            }
+          }
+          return null;
+        });
+  }
+
+  @Override
+  public void deleteIdentityProvider(String alias) {
+    retried(() -> delete(admin + "/identity-provider/instances/" + alias));
+  }
+
   private Void delete(String path) {
     try {
       http.delete().uri(path).headers(this::bearer).retrieve().toBodilessEntity();

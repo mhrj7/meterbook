@@ -101,6 +101,62 @@ class KeycloakDirectoryTest {
   }
 
   @Test
+  void creates_a_signed_saml_provider_routed_by_the_organizations_domains() throws Exception {
+    String alias = unique("acme");
+    UUID organization = directory.createOrganization(alias, alias, List.of(alias + ".test"));
+    String providerAlias = "sso-" + UUID.randomUUID();
+    String spEntityId = KEYCLOAK.issuer() + "/sso/" + providerAlias;
+    String certificate =
+        new String(
+                KeycloakDirectoryTest.class
+                    .getResourceAsStream("/certs/idp-valid.crt")
+                    .readAllBytes(),
+                java.nio.charset.StandardCharsets.US_ASCII)
+            .replace("-----BEGIN CERTIFICATE-----", "")
+            .replace("-----END CERTIFICATE-----", "")
+            .replaceAll("\\s", "");
+
+    directory.createSamlProvider(
+        organization,
+        new Directory.SamlProvider(
+            providerAlias,
+            "Acme SSO",
+            spEntityId,
+            "https://idp.acme.test",
+            "https://idp.acme.test/sso",
+            certificate));
+
+    var provider = admin.identityProvider(providerAlias);
+    var config = provider.get("config");
+    assertThat(provider.get("providerId").asString()).isEqualTo("saml");
+    assertThat(provider.get("firstBrokerLoginFlowAlias").asString())
+        .isEqualTo("meterbook first broker login");
+    assertThat(provider.get("trustEmail").asBoolean()).isTrue();
+    assertThat(config.get("validateSignature").asString()).isEqualTo("true");
+    assertThat(config.get("wantAssertionsSigned").asString()).isEqualTo("true");
+    assertThat(config.get("wantAuthnRequestsSigned").asString()).isEqualTo("true");
+    assertThat(config.get("signingCertificate").asString()).isEqualTo(certificate);
+    assertThat(config.get("entityId").asString()).isEqualTo(spEntityId);
+    assertThat(config.get("kc.org.domain").asString()).isEqualTo("ANY");
+    assertThat(admin.identityProvidersOf(organization)).containsExactly(providerAlias);
+
+    String descriptor =
+        new String(
+            java.net
+                .URI
+                .create(KEYCLOAK.issuer() + "/broker/" + providerAlias + "/endpoint/descriptor")
+                .toURL()
+                .openStream()
+                .readAllBytes(),
+            java.nio.charset.StandardCharsets.UTF_8);
+    assertThat(descriptor).contains("entityID=\"" + spEntityId + "\"");
+
+    directory.deleteIdentityProvider(providerAlias);
+    directory.deleteIdentityProvider(providerAlias);
+    assertThat(admin.identityProviderExists(providerAlias)).isFalse();
+  }
+
+  @Test
   void renews_its_token_when_it_expires() {
     directory.findUserByEmail("nobody@example.test");
     CLOCK.advance(Duration.ofHours(1));
