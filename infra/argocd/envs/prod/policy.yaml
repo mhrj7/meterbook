@@ -28,6 +28,23 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: cosign-system
+  # The controller reconciles its own webhooks: it writes their CA, the service path and an exclusion it adds to the
+  # namespace selector. Ignored so ArgoCD neither reports nor reverts that; the rest of each webhook stays in Git.
+  ignoreDifferences:
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      name: policy.sigstore.dev
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+        - .webhooks[]?.clientConfig.service.path
+        - .webhooks[]?.namespaceSelector
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      name: policy.sigstore.dev
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+        - .webhooks[]?.clientConfig.service.path
+        - .webhooks[]?.namespaceSelector
   syncPolicy:
     automated:
       prune: true
@@ -35,6 +52,7 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application

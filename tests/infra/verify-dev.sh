@@ -292,6 +292,24 @@ else
   bad "mesh: ztunnel counts the request as mTLS from the client's SPIFFE identity"
 fi
 
+# --- Image admission (ADR-0012) ----------------------------------------------------------------------------------
+# Only images signed by a known workflow run in application namespaces. Our own (identity, Keycloak, db-bootstrap,
+# the tools image) are admitted, as the checks above and below show; an unsigned one is refused.
+for ns in meterbook-dev meterbook-staging; do
+  check "$ns enrolled in image admission" eq \
+    "$(kubectl get namespace "$ns" -o 'jsonpath={.metadata.labels.policy\.sigstore\.dev/include}')" true
+done
+denied=$(kubectl -n meterbook-dev run unsigned --image=busybox:1.37 --restart=Never -- true 2>&1 || true)
+kubectl -n meterbook-dev delete pod unsigned --ignore-not-found --wait=false >/dev/null 2>&1 || true
+check "an unsigned image is refused at admission in meterbook-dev (no matching policy)" \
+  bash -c "grep -q 'no matching policies' <<<\"\$1\"" _ "$denied"
+if kubectl -n np-outsider run unsigned-outside --image=busybox:1.37 --restart=Never -- true >/dev/null 2>&1; then
+  ok "namespaces outside the policy are not affected"
+else
+  bad "namespaces outside the policy are not affected"
+fi
+kubectl -n np-outsider delete pod unsigned-outside --ignore-not-found --wait=false >/dev/null 2>&1 || true
+
 # --- Identity on EKS (MB-T07) ------------------------------------------------------------------------------------
 # Keycloak and identity per environment, deployed by ArgoCD: generated secrets, the db-bootstrap Job, the workloads.
 # The API is exercised from inside the cluster (no public ingress yet), with the same image the bootstrap uses.
