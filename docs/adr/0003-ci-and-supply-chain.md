@@ -47,7 +47,8 @@ We will use **Option A** with these rules:
 - **Negative / accepted trade-offs:** SHA pins make action upgrades a Dependabot PR rather than automatic;
   `ignore-unfixed` means a CRITICAL with no available fix is reported but does not block (otherwise an upstream
   issue could freeze all releases).
-- **Follow-up work:** MB-T06 (admission policy verifying signatures), branch protection on `main` requiring `ci`.
+- **Follow-up work:** MB-T06 (admission policy verifying signatures; done in ADR-0012), branch protection on `main`
+  requiring `ci`.
 
 ## How we will know it was wrong
 
