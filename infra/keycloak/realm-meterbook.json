@@ -406,22 +406,15 @@
   "authenticationFlows": [
     {
       "alias": "meterbook first broker login",
-      "description": "First sign-in through a tenant's SSO connection: links to the tenant user with the same email (provisioned by SCIM), or creates the user just in time. Safe because a domain routes to one tenant's IdP only.",
+      "description": "First sign-in through a tenant's SSO connection: creates the user just in time if the email is unused. It never links to an existing account by email, because a tenant controls its own IdP and could assert anyone's email. Users provisioned by SCIM are linked to their tenant's IdP explicitly by the identity service.",
       "providerId": "basic-flow",
       "topLevel": true,
       "builtIn": false,
       "authenticationExecutions": [
         {
           "authenticator": "idp-create-user-if-unique",
-          "requirement": "ALTERNATIVE",
+          "requirement": "REQUIRED",
           "priority": 10,
-          "autheticatorFlow": false,
-          "userSetupAllowed": false
-        },
-        {
-          "authenticator": "idp-auto-link",
-          "requirement": "ALTERNATIVE",
-          "priority": 20,
           "autheticatorFlow": false,
           "userSetupAllowed": false
         }

@@ -202,7 +202,9 @@ public final class KeycloakDirectory implements Directory {
         });
   }
 
-  /** The realm's flow that links a first SSO sign-in to the existing user by email. */
+  /**
+   * The realm's first-sign-in flow: create the user if the email is unused, never link by email.
+   */
   static final String FIRST_BROKER_LOGIN_FLOW = "meterbook first broker login";
 
   @Override

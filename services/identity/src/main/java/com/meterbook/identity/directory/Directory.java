@@ -45,8 +45,8 @@ public interface Directory {
 
   /**
    * Creates the identity provider and routes every email domain of the organization to it.
-   * Assertions must be signed by {@code signingCertificate}; first sign-ins link to the user with
-   * the same email.
+   * Assertions must be signed by {@code signingCertificate}. A first sign-in creates a new user and
+   * never links to an existing account (design doc §9).
    */
   void createSamlProvider(UUID organization, SamlProvider provider);
 

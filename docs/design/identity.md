@@ -38,8 +38,9 @@ they sign; most self-serve users sign in with a password.
 - FR1: Platform admin creates a tenant with a name, a slug, its email domains and its first admin.
 - FR2: Tenant admin adds, lists and deletes SAML 2.0 SSO connections. The response tells them which SP entity ID and
   ACS URL to configure in their IdP.
-- FR3: Login routes a user to their tenant's IdP by email domain; first login links to an existing SCIM-provisioned
-  user with the same email, otherwise creates the user as a member of the tenant (just-in-time).
+- FR3: Login routes a user to their tenant's IdP by email domain. A SCIM-provisioned user is linked to their tenant's
+  IdP by the identity service (Keycloak federated identity); anyone else is created as a member of the tenant on first
+  login (just-in-time). A first login never links to an existing account by email (§9).
 - FR4: Tenant admin issues and revokes SCIM tokens; a token is shown once.
 - FR5: SCIM 2.0 Users (create, get, list with `filter=userName eq "…"`, replace, patch, delete) and Groups (create,
   get, list, patch members, delete), plus `ServiceProviderConfig`, `ResourceTypes` and `Schemas`.
@@ -148,7 +149,10 @@ Building our own authorization server, Zitadel, and hosted vendors — see ADR-0
 - **Information disclosure:** cross-tenant access returns 404; logs never contain tokens, assertions or passwords.
 - **Denial of service:** Keycloak brute-force detection; per-tenant rate limits (MB-T12).
 - **Elevation of privilege:** a domain can map to only one tenant, and only a platform admin can add domains, so a
-  tenant cannot claim another company's users through an IdP it controls. The identity service account holds
+  tenant cannot claim another company's users through an IdP it controls. Each tenant controls its own IdP and could
+  assert any email, so a first SSO sign-in **never links to an existing account by email** (that would hand a tenant
+  any user of any other tenant); it can only create a new user. SCIM users are linked to their own tenant's IdP
+  explicitly, and SCIM accepts only emails in the tenant's domains. The identity service account holds
   `manage-users`, which in Keycloak allows mapping any realm role; the adapter therefore grants only `tenant-admin`
   (enforced in code and tested). Restricting this inside Keycloak with fine-grained admin permissions is follow-up
   work (MB-T11).
