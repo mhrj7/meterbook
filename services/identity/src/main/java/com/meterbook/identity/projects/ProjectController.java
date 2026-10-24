@@ -43,11 +43,19 @@ public class ProjectController {
       @NotNull @Pattern(regexp = "live|test") String kind) {}
 
   /** A page of projects. */
-  public record ProjectList(List<Projects.Project> data, boolean hasMore, String nextCursor) {}
+  public record ProjectList(List<Projects.Project> data, boolean hasMore, String nextCursor) {
+    public ProjectList {
+      data = List.copyOf(data);
+    }
+  }
 
   /** A page of environments. */
   public record EnvironmentList(
-      List<Projects.Environment> data, boolean hasMore, String nextCursor) {}
+      List<Projects.Environment> data, boolean hasMore, String nextCursor) {
+    public EnvironmentList {
+      data = List.copyOf(data);
+    }
+  }
 
   private final Projects projects;
   private final Idempotency idempotency;

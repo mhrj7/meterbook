@@ -21,7 +21,11 @@ public class MeController {
       String name,
       List<String> roles,
       String loginMethod,
-      UUID ssoConnectionId) {}
+      UUID ssoConnectionId) {
+    public Me {
+      roles = List.copyOf(roles);
+    }
+  }
 
   @GetMapping("/v1/me")
   public Me me(CallerAuthentication authentication) {

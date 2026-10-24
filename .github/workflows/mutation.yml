@@ -1,0 +1,75 @@
+# Mutation testing (PIT) for the Java services: do the tests notice when the code changes? It takes about an hour,
+# too slow for every pull request, so it runs after Java changes reach main, weekly and on demand. Below the 75%
+# target (tracker, Coverage sheet) the run fails.
+name: mutation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/identity/**"
+      - ".github/workflows/mutation.yml"
+  schedule:
+    - cron: "43 2 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pitest:
+    name: PIT ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [identity]
+    defaults:
+      run:
+        # Job defaults replace the workflow defaults: repeat the shell, or pipefail is lost.
+        shell: bash
+        working-directory: services/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+        with:
+          cache-read-only: true
+      - name: PIT (fails below the mutation threshold)
+        run: ./gradlew pitest --no-daemon
+      - name: Summarise
+        if: always()
+        env:
+          SERVICE: ${{ matrix.service }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import collections, os, xml.etree.ElementTree as ET
+          path = "build/reports/pitest/mutations.xml"
+          if not os.path.exists(path):
+              print(f"### PIT {os.environ['SERVICE']}: no report"); raise SystemExit
+          packages = collections.defaultdict(lambda: [0, 0])
+          for m in ET.parse(path).getroot().iter("mutation"):
+              package = m.findtext("mutatedClass").rsplit(".", 1)[0]
+              packages[package][0] += 1
+              packages[package][1] += m.get("detected") == "true"
+          total = sum(n for n, _ in packages.values()); killed = sum(k for _, k in packages.values())
+          print(f"### PIT {os.environ['SERVICE']}: {killed}/{total} mutants killed ({100 * killed / total:.1f}%)")
+          print("| Package | Killed | Score |\n|---|---|---|")
+          for package, (n, k) in sorted(packages.items()):
+              print(f"| `{package}` | {k}/{n} | {100 * k / n:.0f}% |")
+          PY
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pitest-${{ matrix.service }}
+          path: services/${{ matrix.service }}/build/reports/pitest/
+          retention-days: 30

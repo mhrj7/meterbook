@@ -30,7 +30,11 @@ public class TenantService {
 
   /** A validated request to create a tenant. */
   public record NewTenant(
-      String name, String slug, List<String> domains, String initialAdminEmail) {}
+      String name, String slug, List<String> domains, String initialAdminEmail) {
+    public NewTenant {
+      domains = List.copyOf(domains);
+    }
+  }
 
   private final Directory directory;
   private final TenantRepository tenants;

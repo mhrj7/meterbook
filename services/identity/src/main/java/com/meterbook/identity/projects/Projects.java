@@ -39,11 +39,11 @@ public class Projects {
 
   /** A project with its environments. */
   public record Project(
-      UUID id,
-      String name,
-      String slug,
-      List<Environment> environments,
-      OffsetDateTime createdAt) {}
+      UUID id, String name, String slug, List<Environment> environments, OffsetDateTime createdAt) {
+    public Project {
+      environments = List.copyOf(environments);
+    }
+  }
 
   private final DSLContext db;
   private final TenantScope scope;

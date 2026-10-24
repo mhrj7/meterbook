@@ -16,7 +16,11 @@ public class TenantRepository {
 
   /** A stored tenant. */
   public record Tenant(
-      UUID id, String name, String slug, List<String> domains, OffsetDateTime createdAt) {}
+      UUID id, String name, String slug, List<String> domains, OffsetDateTime createdAt) {
+    public Tenant {
+      domains = List.copyOf(domains);
+    }
+  }
 
   private final DSLContext db;
 

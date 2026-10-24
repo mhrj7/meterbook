@@ -17,6 +17,9 @@ pitest-plugin = "1.19.0"
 # 1.30.1 is less than two weeks old.
 pitest-core = "1.30.0"
 pitest-junit5 = "1.2.3"
+# 6.5.13 is less than two weeks old.
+spotbugs-plugin = "6.5.12"
+spotbugs-core = "4.10.4"
 
 [libraries]
 playwright = { module = "com.microsoft.playwright:playwright", version.ref = "playwright" }
@@ -30,3 +33,4 @@ spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 errorprone = { id = "net.ltgt.errorprone", version.ref = "errorprone-plugin" }
 jooq-codegen = { id = "org.jooq.jooq-codegen-gradle", version.ref = "jooq" }
 pitest = { id = "info.solidsoft.pitest", version.ref = "pitest-plugin" }
+spotbugs = { id = "com.github.spotbugs", version.ref = "spotbugs-plugin" }
