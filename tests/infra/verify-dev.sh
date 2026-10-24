@@ -286,10 +286,28 @@ for env in dev staging; do
       | grep -v '^true true$' | grep -q . && exit 1 || exit 0"
 done
 
+redact() { sed -E 's/[0-9]{1,3}(\.[0-9]{1,3}){3}/<ip>/g; s/[A-Za-z0-9.-]+\.amazonaws\.com/<aws-host>/g'; }
+pod_phase() { kubectl -n "$1" get pod "$2" -o 'jsonpath={.status.phase}' 2>/dev/null; }
+pod_done() { case "$(pod_phase "$1" "$2")" in Succeeded|Failed) return 0 ;; *) return 1 ;; esac; }
 in_cluster() { # in_cluster <name> <namespace> <env-json> <script>: run a script in the tools image, print its output
-  kubectl -n "$2" run "$1" --image="$TOOLS_IMAGE" --restart=Never --rm -i --quiet --command \
+  # Run to completion, then read the log: attaching (kubectl run -i) races a short-lived pod and can lose its output
+  # or deliver it twice.
+  kubectl -n "$2" delete pod "$1" --ignore-not-found --wait=true >/dev/null 2>&1 || true
+  if ! kubectl -n "$2" run "$1" --image="$TOOLS_IMAGE" --restart=Never --command \
     --overrides="{\"spec\":{\"securityContext\":{\"runAsNonRoot\":true,\"runAsUser\":10001,\"seccompProfile\":{\"type\":\"RuntimeDefault\"}},\"containers\":[{\"name\":\"$1\",\"image\":\"$TOOLS_IMAGE\",\"command\":[\"bash\",\"-c\",$(jq -Rs . <<<"$4")],\"env\":$3,\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]}}}]}}" \
-    -- true 2>/dev/null || true
+    -- true >/dev/null 2>&1; then
+    echo "in_cluster $1: could not create the pod" >&2
+    return 0
+  fi
+  if ! wait_until 300 pod_done "$2" "$1" || [ "$(pod_phase "$2" "$1")" != Succeeded ]; then
+    { echo "in_cluster $1: pod ended as '$(pod_phase "$2" "$1")'"
+      kubectl -n "$2" get pod "$1" -o 'jsonpath={.status.containerStatuses[0].state}' 2>&1; echo
+      kubectl -n "$2" logs "$1" --tail=5 2>&1
+      kubectl -n "$2" get events --field-selector "involvedObject.name=$1" -o 'custom-columns=REASON:.reason,MESSAGE:.message' 2>&1 | tail -5
+    } | redact >&2
+  fi
+  kubectl -n "$2" logs "$1" 2>/dev/null || true
+  kubectl -n "$2" delete pod "$1" --wait=false >/dev/null 2>&1 || true
 }
 secret_env() { # secret_env <var> <secret> <key>
   printf '{"name":"%s","valueFrom":{"secretKeyRef":{"name":"%s","key":"%s"}}}' "$1" "$2" "$3"
@@ -321,7 +339,7 @@ api=$(in_cluster identity-api meterbook-dev "[$(secret_env OPERATOR_SECRET keycl
   echo "key_bogus_cache=$(curl -s -D - -o /dev/null -H "Authorization: Bearer $bogus" "$id/v1/api-key" | tr -d "\r" | sed -n "s/^[Cc]ache-[Cc]ontrol: //p")"
   echo "key_operator=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $token" "$id/v1/api-key")"
 ')
-# kubectl run -i can deliver a pod's output twice (attach, then logs), so each key is read from its first line only.
+# Each key is read from its first line only, in case a script prints one twice.
 field() { sed -n "s/^$1=//p" <<<"$api" | head -n1; }
 check "identity rejects a request without a token (401)" eq "$(field anonymous_me)" 401
 check "an operator token from Keycloak is accepted; /v1/me needs a tenant (403)" eq "$(field operator_me)" 403
