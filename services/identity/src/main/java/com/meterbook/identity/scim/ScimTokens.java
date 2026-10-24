@@ -4,6 +4,7 @@ import static com.meterbook.identity.db.Tables.SCIM_TOKENS;
 
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
+import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.ApiException;
 import com.meterbook.identity.web.Pages;
 import java.nio.charset.StandardCharsets;
@@ -51,11 +52,13 @@ public class ScimTokens {
   public record Holder(UUID tokenId, UUID tenantId) {}
 
   private final DSLContext db;
+  private final TenantScope scope;
   private final Clock clock;
   private final SecureRandom random = new SecureRandom();
 
-  public ScimTokens(DSLContext db, Clock clock) {
+  public ScimTokens(DSLContext db, TenantScope scope, Clock clock) {
     this.db = db;
+    this.scope = scope;
     this.clock = clock;
   }
 
@@ -69,14 +72,17 @@ public class ScimTokens {
             secret.substring(0, SHOWN_PREFIX),
             OffsetDateTime.now(clock),
             null);
-    db.insertInto(SCIM_TOKENS)
-        .set(SCIM_TOKENS.ID, token.id())
-        .set(SCIM_TOKENS.TENANT_ID, tenant)
-        .set(SCIM_TOKENS.DESCRIPTION, description)
-        .set(SCIM_TOKENS.PREFIX, token.prefix())
-        .set(SCIM_TOKENS.TOKEN_HASH, hash(secret))
-        .set(SCIM_TOKENS.CREATED_AT, token.createdAt())
-        .execute();
+    scope.inTenant(
+        tenant,
+        () ->
+            db.insertInto(SCIM_TOKENS)
+                .set(SCIM_TOKENS.ID, token.id())
+                .set(SCIM_TOKENS.TENANT_ID, tenant)
+                .set(SCIM_TOKENS.DESCRIPTION, description)
+                .set(SCIM_TOKENS.PREFIX, token.prefix())
+                .set(SCIM_TOKENS.TOKEN_HASH, hash(secret))
+                .set(SCIM_TOKENS.CREATED_AT, token.createdAt())
+                .execute());
     return new Issued(token, secret);
   }
 
@@ -86,31 +92,38 @@ public class ScimTokens {
     if (startingAfter.isPresent()) {
       condition = condition.and(SCIM_TOKENS.ID.gt(startingAfter.get()));
     }
+    var where = condition;
     List<Token> rows =
-        db.selectFrom(SCIM_TOKENS)
-            .where(condition)
-            .orderBy(SCIM_TOKENS.ID)
-            .limit(limit + 1)
-            .fetch(
-                r ->
-                    new Token(
-                        r.getId(),
-                        r.getDescription(),
-                        r.getPrefix(),
-                        r.getCreatedAt(),
-                        r.getLastUsedAt()));
+        scope.inTenant(
+            tenant,
+            () ->
+                db.selectFrom(SCIM_TOKENS)
+                    .where(where)
+                    .orderBy(SCIM_TOKENS.ID)
+                    .limit(limit + 1)
+                    .fetch(
+                        r ->
+                            new Token(
+                                r.getId(),
+                                r.getDescription(),
+                                r.getPrefix(),
+                                r.getCreatedAt(),
+                                r.getLastUsedAt())));
     return Pages.of(rows, limit, t -> t.id().toString());
   }
 
   public void revoke(Caller caller, UUID id) {
     UUID tenant = tenantAdminTenant(caller);
     int revoked =
-        db.update(SCIM_TOKENS)
-            .set(SCIM_TOKENS.REVOKED_AT, OffsetDateTime.now(clock))
-            .where(SCIM_TOKENS.TENANT_ID.eq(tenant))
-            .and(SCIM_TOKENS.ID.eq(id))
-            .and(SCIM_TOKENS.REVOKED_AT.isNull())
-            .execute();
+        scope.inTenant(
+            tenant,
+            () ->
+                db.update(SCIM_TOKENS)
+                    .set(SCIM_TOKENS.REVOKED_AT, OffsetDateTime.now(clock))
+                    .where(SCIM_TOKENS.TENANT_ID.eq(tenant))
+                    .and(SCIM_TOKENS.ID.eq(id))
+                    .and(SCIM_TOKENS.REVOKED_AT.isNull())
+                    .execute());
     if (revoked == 0) {
       throw ApiException.notFound("scim_token_not_found", "no such SCIM token");
     }
@@ -123,6 +136,12 @@ public class ScimTokens {
         || secret.length() != PREFIX.length() + SECRET_CHARACTERS) {
       return Optional.empty();
     }
+    // A presented secret does not say which tenant it belongs to; finding out is a platform
+    // operation.
+    return scope.asPlatform("resolve a SCIM token to its tenant", () -> resolve(secret));
+  }
+
+  private Optional<Holder> resolve(String secret) {
     var row =
         db.selectFrom(SCIM_TOKENS)
             .where(SCIM_TOKENS.TOKEN_HASH.eq(hash(secret)))

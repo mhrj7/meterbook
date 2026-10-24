@@ -3,6 +3,7 @@ package com.meterbook.identity.tenants;
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
+import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.ApiException;
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -14,12 +15,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Creates tenants across Keycloak and the database (design doc §7.3): the organization and admin
  * are created in Keycloak first (its ID is the tenant ID), then the rows are written in one
- * transaction. If anything fails after Keycloak changed, the Keycloak changes are undone.
+ * transaction in the new tenant's scope. If anything fails after Keycloak changed, the Keycloak
+ * changes are undone.
  */
 @Service
 public class TenantService {
@@ -33,14 +34,14 @@ public class TenantService {
 
   private final Directory directory;
   private final TenantRepository tenants;
-  private final TransactionTemplate transaction;
+  private final TenantScope scope;
   private final Clock clock;
 
   public TenantService(
-      Directory directory, TenantRepository tenants, TransactionTemplate transaction, Clock clock) {
+      Directory directory, TenantRepository tenants, TenantScope scope, Clock clock) {
     this.directory = directory;
     this.tenants = tenants;
-    this.transaction = transaction;
+    this.scope = scope;
     this.clock = clock;
   }
 
@@ -59,10 +60,13 @@ public class TenantService {
           "initial_admin_email must belong to one of the tenant's domains",
           "initial_admin_email");
     }
-    if (tenants.slugExists(request.slug())) {
+    if (scope.asPlatform(
+        "tenant slugs are unique across tenants", () -> tenants.slugExists(request.slug()))) {
       throw ApiException.conflict("slug_taken", "another tenant uses this slug", null);
     }
-    List<String> claimed = tenants.claimedDomains(domains);
+    List<String> claimed =
+        scope.asPlatform(
+            "a domain belongs to one tenant only", () -> tenants.claimedDomains(domains));
     if (!claimed.isEmpty()) {
       throw ApiException.conflict(
           "domain_already_claimed",
@@ -94,7 +98,7 @@ public class TenantService {
       TenantRepository.Tenant tenant =
           new TenantRepository.Tenant(
               organization, request.name(), request.slug(), domains, OffsetDateTime.now(clock));
-      transaction.executeWithoutResult(status -> tenants.insert(tenant));
+      scope.inTenant(tenant.id(), () -> tenants.insert(tenant));
       return tenant;
     } catch (RuntimeException e) {
       undo(organization, createdUser);
@@ -103,11 +107,15 @@ public class TenantService {
   }
 
   public TenantRepository.Tenant get(Caller caller, UUID id) {
-    boolean allowed = caller.has(Role.PLATFORM_ADMIN) || caller.tenantId().equals(Optional.of(id));
-    return tenants
-        .find(id)
-        .filter(t -> allowed)
-        .orElseThrow(() -> ApiException.notFound("tenant_not_found", "no such tenant"));
+    Optional<TenantRepository.Tenant> tenant;
+    if (caller.has(Role.PLATFORM_ADMIN)) {
+      tenant = scope.asPlatform("operators read any tenant", () -> tenants.find(id));
+    } else {
+      // Row-level security: another tenant's row is invisible here even before the comparison
+      // below.
+      tenant = caller.tenantId().flatMap(own -> scope.inTenant(own, () -> tenants.find(id)));
+    }
+    return tenant.orElseThrow(() -> ApiException.notFound("tenant_not_found", "no such tenant"));
   }
 
   private void undo(UUID organization, UUID createdUser) {

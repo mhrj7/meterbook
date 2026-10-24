@@ -14,6 +14,7 @@ import com.meterbook.identity.db.Tables;
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.support.FakeDirectory;
 import com.meterbook.identity.support.TestDatabase;
+import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -52,6 +53,7 @@ class ScimUsersApiTest {
   @Autowired FakeDirectory directory;
   @Autowired DSLContext db;
   @Autowired ScimTokens tokens;
+  @Autowired TenantScope scope;
   @Autowired JsonMapper json;
 
   private ScimTestSupport acme;
@@ -59,7 +61,7 @@ class ScimUsersApiTest {
   @BeforeEach
   void setUp() {
     directory.reset();
-    acme = ScimTestSupport.tenant(db, tokens);
+    acme = ScimTestSupport.tenant(db, scope, tokens);
   }
 
   private MockHttpServletRequestBuilder as(
@@ -95,11 +97,14 @@ class ScimUsersApiTest {
   }
 
   private UUID keycloakUserOf(String id) {
-    return db.select(Tables.SCIM_USERS.KEYCLOAK_USER_ID)
-        .from(Tables.SCIM_USERS)
-        .where(Tables.SCIM_USERS.ID.eq(UUID.fromString(id)))
-        .fetchOne()
-        .value1();
+    return scope.inTenant(
+        acme.tenant(),
+        () ->
+            db.select(Tables.SCIM_USERS.KEYCLOAK_USER_ID)
+                .from(Tables.SCIM_USERS)
+                .where(Tables.SCIM_USERS.ID.eq(UUID.fromString(id)))
+                .fetchOne()
+                .value1());
   }
 
   @Test
@@ -180,16 +185,19 @@ class ScimUsersApiTest {
   @Test
   void links_users_to_the_tenants_sso_connection() throws Exception {
     String alias = "sso-" + UUID.randomUUID();
-    db.insertInto(Tables.SSO_CONNECTIONS)
-        .set(Tables.SSO_CONNECTIONS.ID, UUID.randomUUID())
-        .set(Tables.SSO_CONNECTIONS.TENANT_ID, acme.tenant())
-        .set(Tables.SSO_CONNECTIONS.KEYCLOAK_ALIAS, alias)
-        .set(Tables.SSO_CONNECTIONS.PROTOCOL, "saml")
-        .set(Tables.SSO_CONNECTIONS.DISPLAY_NAME, "Okta")
-        .set(Tables.SSO_CONNECTIONS.IDP_ENTITY_ID, "x")
-        .set(Tables.SSO_CONNECTIONS.SSO_URL, "https://x")
-        .set(Tables.SSO_CONNECTIONS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
-        .execute();
+    scope.inTenant(
+        acme.tenant(),
+        () ->
+            db.insertInto(Tables.SSO_CONNECTIONS)
+                .set(Tables.SSO_CONNECTIONS.ID, UUID.randomUUID())
+                .set(Tables.SSO_CONNECTIONS.TENANT_ID, acme.tenant())
+                .set(Tables.SSO_CONNECTIONS.KEYCLOAK_ALIAS, alias)
+                .set(Tables.SSO_CONNECTIONS.PROTOCOL, "saml")
+                .set(Tables.SSO_CONNECTIONS.DISPLAY_NAME, "Okta")
+                .set(Tables.SSO_CONNECTIONS.IDP_ENTITY_ID, "x")
+                .set(Tables.SSO_CONNECTIONS.SSO_URL, "https://x")
+                .set(Tables.SSO_CONNECTIONS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
+                .execute());
 
     String id = createdId("jane");
 
@@ -199,7 +207,7 @@ class ScimUsersApiTest {
   @Test
   void users_of_one_tenant_are_invisible_to_another() throws Exception {
     String id = createdId("jane");
-    ScimTestSupport globex = ScimTestSupport.tenant(db, tokens);
+    ScimTestSupport globex = ScimTestSupport.tenant(db, scope, tokens);
 
     mvc.perform(as(globex, get("/scim/v2/Users/" + id)))
         .andExpect(status().isNotFound())
@@ -356,7 +364,12 @@ class ScimUsersApiTest {
         .andExpect(header().string("Retry-After", "2"));
 
     assertThat(directory.users).isEmpty();
-    assertThat(db.fetchCount(Tables.SCIM_USERS, Tables.SCIM_USERS.TENANT_ID.eq(acme.tenant())))
+    assertThat(
+            scope.inTenant(
+                acme.tenant(),
+                () ->
+                    db.fetchCount(
+                        Tables.SCIM_USERS, Tables.SCIM_USERS.TENANT_ID.eq(acme.tenant()))))
         .isZero();
   }
 

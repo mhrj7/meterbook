@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.meterbook.identity.support.FakeDirectory;
 import com.meterbook.identity.support.TestDatabase;
+import com.meterbook.identity.tenancy.TenantScope;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,7 @@ class ScimGroupsApiTest {
   @Autowired MockMvc mvc;
   @Autowired DSLContext db;
   @Autowired ScimTokens tokens;
+  @Autowired TenantScope scope;
   @Autowired JsonMapper json;
 
   private ScimTestSupport acme;
@@ -52,7 +54,7 @@ class ScimGroupsApiTest {
 
   @BeforeEach
   void setUp() throws Exception {
-    acme = ScimTestSupport.tenant(db, tokens);
+    acme = ScimTestSupport.tenant(db, scope, tokens);
     jane = user(acme, "jane");
     joe = user(acme, "joe");
   }
@@ -130,7 +132,7 @@ class ScimGroupsApiTest {
 
   @Test
   void members_must_be_users_of_the_same_tenant() throws Exception {
-    ScimTestSupport globex = ScimTestSupport.tenant(db, tokens);
+    ScimTestSupport globex = ScimTestSupport.tenant(db, scope, tokens);
     String outsider = user(globex, "eve");
 
     createGroup("Finance", outsider)
@@ -210,7 +212,7 @@ class ScimGroupsApiTest {
   @Test
   void lists_gets_and_deletes_groups_of_the_tenant_only() throws Exception {
     String id = groupId("Finance", jane);
-    ScimTestSupport globex = ScimTestSupport.tenant(db, tokens);
+    ScimTestSupport globex = ScimTestSupport.tenant(db, scope, tokens);
 
     mvc.perform(as(acme, get("/scim/v2/Groups").param("filter", "displayName eq \"finance\"")))
         .andExpect(jsonPath("$.totalResults").value(1));

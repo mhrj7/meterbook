@@ -52,7 +52,7 @@ public class ScimUsersController {
 
   @GetMapping("/{id}")
   ResponseEntity<ObjectNode> get(ScimAuthentication auth, @PathVariable UUID id) {
-    return render(users.get(auth.tenantId(), id));
+    return render(auth.tenantId(), users.get(auth.tenantId(), id));
   }
 
   @GetMapping
@@ -65,7 +65,7 @@ public class ScimUsersController {
     int size = Math.clamp(count, 0, ScimDiscoveryController.MAX_RESULTS);
     var page = users.list(auth.tenantId(), ScimFilter.parse(filter, FILTERABLE), start, size);
     List<ObjectNode> resources =
-        page.getValue().stream().map(u -> u.toJson(users.groupsOf(u))).toList();
+        page.getValue().stream().map(u -> u.toJson(users.groupsOf(auth.tenantId(), u))).toList();
     return ResponseEntity.ok()
         .contentType(SCIM)
         .body(
@@ -83,7 +83,9 @@ public class ScimUsersController {
       @PathVariable UUID id,
       @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
       @RequestBody JsonNode body) {
-    return render(users.replace(auth.tenantId(), id, ScimUser.Attributes.from(body), ifMatch));
+    return render(
+        auth.tenantId(),
+        users.replace(auth.tenantId(), id, ScimUser.Attributes.from(body), ifMatch));
   }
 
   @PatchMapping("/{id}")
@@ -92,7 +94,8 @@ public class ScimUsersController {
       @PathVariable UUID id,
       @RequestHeader(name = HttpHeaders.IF_MATCH, required = false) String ifMatch,
       @RequestBody JsonNode body) {
-    return render(users.patch(auth.tenantId(), id, ScimPatch.operations(body), ifMatch));
+    return render(
+        auth.tenantId(), users.patch(auth.tenantId(), id, ScimPatch.operations(body), ifMatch));
   }
 
   @DeleteMapping("/{id}")
@@ -101,10 +104,10 @@ public class ScimUsersController {
     return ResponseEntity.noContent().build();
   }
 
-  private ResponseEntity<ObjectNode> render(ScimUser user) {
+  private ResponseEntity<ObjectNode> render(UUID tenant, ScimUser user) {
     return ResponseEntity.ok()
         .contentType(SCIM)
         .header(HttpHeaders.ETAG, user.etag())
-        .body(user.toJson(users.groupsOf(user)));
+        .body(user.toJson(users.groupsOf(tenant, user)));
   }
 }

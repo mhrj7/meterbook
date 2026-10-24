@@ -2,6 +2,7 @@ package com.meterbook.identity.scim;
 
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.sso.SsoConnectionRepository;
+import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.tenants.TenantRepository;
 import java.time.Clock;
 import java.time.OffsetDateTime;
@@ -14,7 +15,6 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * SCIM users, kept in step with Keycloak (design doc §7.3). Every change to Keycloak happens before
@@ -29,7 +29,7 @@ public class ScimUsers {
   private final TenantRepository tenants;
   private final SsoConnectionRepository connections;
   private final Directory directory;
-  private final TransactionTemplate transaction;
+  private final TenantScope scope;
   private final Clock clock;
 
   ScimUsers(
@@ -37,19 +37,19 @@ public class ScimUsers {
       TenantRepository tenants,
       SsoConnectionRepository connections,
       Directory directory,
-      TransactionTemplate transaction,
+      TenantScope scope,
       Clock clock) {
     this.users = users;
     this.tenants = tenants;
     this.connections = connections;
     this.directory = directory;
-    this.transaction = transaction;
+    this.scope = scope;
     this.clock = clock;
   }
 
   ScimUser create(UUID tenant, ScimUser.Attributes attributes) {
     requireTenantDomain(tenant, attributes.email());
-    if (users.userNameExists(tenant, attributes.userNameKey())) {
+    if (scope.inTenant(tenant, () -> users.userNameExists(tenant, attributes.userNameKey()))) {
       throw ScimException.uniqueness("userName " + attributes.userName() + " already exists");
     }
     UUID keycloakUser = null;
@@ -84,13 +84,13 @@ public class ScimUsers {
       }
       directory.setEnabled(keycloakUser, attributes.active());
       UUID linked = keycloakUser;
-      connections
-          .forTenant(tenant)
+      scope
+          .inTenant(tenant, () -> connections.forTenant(tenant))
           .ifPresent(c -> directory.linkIdentity(linked, c.keycloakAlias(), attributes.email()));
 
       OffsetDateTime now = OffsetDateTime.now(clock);
       ScimUser user = new ScimUser(UUID.randomUUID(), keycloakUser, attributes, 1, now, now);
-      transaction.executeWithoutResult(status -> users.insert(tenant, user));
+      scope.inTenant(tenant, () -> users.insert(tenant, user));
       return user;
     } catch (RuntimeException e) {
       undoCreate(tenant, keycloakUser, created, addedMember);
@@ -99,16 +99,18 @@ public class ScimUsers {
   }
 
   ScimUser get(UUID tenant, UUID id) {
-    return users.find(tenant, id).orElseThrow(() -> ScimException.notFound("no such user"));
+    return scope
+        .inTenant(tenant, () -> users.find(tenant, id))
+        .orElseThrow(() -> ScimException.notFound("no such user"));
   }
 
   Map.Entry<Integer, List<ScimUser>> list(
       UUID tenant, Optional<ScimFilter> filter, int startIndex, int count) {
-    return users.list(tenant, filter, startIndex, count);
+    return scope.inTenant(tenant, () -> users.list(tenant, filter, startIndex, count));
   }
 
-  List<Map.Entry<UUID, String>> groupsOf(ScimUser user) {
-    return users.groupsOf(user.id());
+  List<Map.Entry<UUID, String>> groupsOf(UUID tenant, ScimUser user) {
+    return scope.inTenant(tenant, () -> users.groupsOf(user.id()));
   }
 
   ScimUser replace(UUID tenant, UUID id, ScimUser.Attributes attributes, String ifMatch) {
@@ -125,12 +127,12 @@ public class ScimUsers {
     ScimUser user = get(tenant, id);
     // Keycloak first: the user's sessions and links end even if removing the row fails.
     directory.deleteUser(user.keycloakUserId());
-    users.delete(tenant, id);
+    scope.inTenant(tenant, () -> users.delete(tenant, id));
   }
 
   /** Links every SCIM user of the tenant to a new SSO connection. */
   public void linkAll(UUID tenant, String providerAlias) {
-    for (ScimUser user : users.all(tenant)) {
+    for (ScimUser user : scope.inTenant(tenant, () -> users.all(tenant))) {
       directory.linkIdentity(user.keycloakUserId(), providerAlias, user.attributes().email());
     }
   }
@@ -149,7 +151,7 @@ public class ScimUsers {
       }
     }
     if (!before.userNameKey().equals(next.userNameKey())
-        && users.userNameExists(tenant, next.userNameKey())) {
+        && scope.inTenant(tenant, () -> users.userNameExists(tenant, next.userNameKey()))) {
       throw ScimException.uniqueness("userName " + next.userName() + " already exists");
     }
     ScimUser updated =
@@ -160,8 +162,9 @@ public class ScimUsers {
             current.version() + 1,
             current.created(),
             OffsetDateTime.now(clock));
-    transaction.executeWithoutResult(
-        status -> {
+    scope.inTenant(
+        tenant,
+        () -> {
           if (!users.update(tenant, updated, current.version())) {
             throw ScimException.preconditionFailed();
           }
@@ -195,7 +198,10 @@ public class ScimUsers {
     }
     String domain = email.substring(at + 1).toLowerCase(Locale.ROOT);
     List<String> domains =
-        tenants.find(tenant).map(TenantRepository.Tenant::domains).orElse(List.of());
+        scope
+            .inTenant(tenant, () -> tenants.find(tenant))
+            .map(TenantRepository.Tenant::domains)
+            .orElse(List.of());
     if (!domains.contains(domain)) {
       // Anything else would let one tenant occupy another company's addresses.
       throw ScimException.invalidValue("the email must be in one of the tenant's domains");
