@@ -159,6 +159,16 @@ variable "app_secret_names" {
   ]
 }
 
+variable "app_namespaces" {
+  description = "Kubernetes namespaces of this environment's services (each gets a db-bootstrap service account binding)."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.app_namespaces) > 0 && alltrue([for n in var.app_namespaces : can(regex("^meterbook-[a-z]+$", n))])
+    error_message = "app_namespaces must name at least one meterbook-<env> namespace."
+  }
+}
+
 variable "tags" {
   description = "Extra tags for every resource."
   type        = map(string)

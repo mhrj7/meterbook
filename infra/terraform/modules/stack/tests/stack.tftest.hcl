@@ -46,7 +46,8 @@ mock_provider "cloudinit" {}
 mock_provider "null" {}
 
 variables {
-  environment = "dev"
+  environment    = "dev"
+  app_namespaces = ["meterbook-dev", "meterbook-staging"]
 }
 
 run "dev_stack_plans_with_account_scoped_bucket_names" {
@@ -142,4 +143,49 @@ run "valid_prod_stack_plans" {
     condition     = output.buckets["invoices"] == "meterbook-prod-invoices-111122223333"
     error_message = "A compliant prod configuration must plan."
   }
+}
+
+run "db_bootstrap_reads_only_the_master_credentials" {
+  command = plan
+
+  override_module {
+    target = module.postgres
+    outputs = {
+      address                = "meterbook-dev.example.eu-north-1.rds.amazonaws.com"
+      port                   = 5432
+      database_name          = "meterbook"
+      master_user_secret_arn = "arn:aws:secretsmanager:eu-north-1:111122223333:secret:rds!db-0000-AbCdEf"
+      security_group_id      = "sg-0000"
+    }
+  }
+
+  assert {
+    condition     = jsonencode(jsondecode(aws_iam_role_policy.db_bootstrap.policy).Statement) == jsonencode([{ Sid = "ReadMasterCredentialsOnly", Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = ["arn:aws:secretsmanager:eu-north-1:111122223333:secret:rds!db-0000-AbCdEf"] }])
+    error_message = "db-bootstrap may read the RDS master secret and nothing else."
+  }
+
+  assert {
+    condition     = jsonencode(sort(keys(aws_eks_pod_identity_association.db_bootstrap))) == jsonencode(["meterbook-dev", "meterbook-staging"]) && alltrue([for a in aws_eks_pod_identity_association.db_bootstrap : a.service_account == "db-bootstrap"])
+    error_message = "Each application namespace gets a db-bootstrap binding."
+  }
+
+  assert {
+    condition     = module.app_secrets.secret_names["database"] == "meterbook-dev/database"
+    error_message = "The database location is published as meterbook-<env>/database."
+  }
+
+  assert {
+    condition     = jsonencode(sort(keys(jsondecode(aws_secretsmanager_secret_version.database.secret_string)))) == jsonencode(["host", "master_secret_arn", "port"])
+    error_message = "The database secret holds location metadata only, never credentials."
+  }
+}
+
+run "rejects_namespaces_of_other_products" {
+  command = plan
+
+  variables {
+    app_namespaces = ["kube-system"]
+  }
+
+  expect_failures = [var.app_namespaces]
 }

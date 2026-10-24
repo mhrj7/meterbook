@@ -48,7 +48,8 @@ provider "helm" {
 }
 
 module "stack" {
-  source = "../../modules/stack"
+  app_namespaces = ["meterbook-prod"]
+  source         = "../../modules/stack"
 
   environment = "prod"
   disposable  = false

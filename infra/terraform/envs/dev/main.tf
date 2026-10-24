@@ -51,7 +51,8 @@ provider "helm" {
 # It is limited to admin_cidrs (0.0.0.0/0 is rejected by the cluster module) and prod keeps the API private.
 #trivy:ignore:AWS-0040
 module "stack" {
-  source = "../../modules/stack"
+  app_namespaces = ["meterbook-dev", "meterbook-staging"]
+  source         = "../../modules/stack"
 
   environment = "dev"
   disposable  = true
