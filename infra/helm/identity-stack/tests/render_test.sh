@@ -39,7 +39,7 @@ expect_render_fails() {
 }
 
 helm dependency build "$CHART" >/dev/null
-for env in dev staging; do
+for env in dev staging prod; do
   if ! helm template identity "$CHART" -f "$CHART/values-$env.yaml" >/dev/null 2>"$WORK/render-$env.err"; then
     echo "FAIL  renders from a clean checkout for $env (as ArgoCD does)"; grep -v 'symbolic link' "$WORK/render-$env.err"
     exit 1
@@ -48,6 +48,7 @@ for env in dev staging; do
 done
 DEV=$(render -f "$CHART/values-dev.yaml")
 STAGING=$(render -f "$CHART/values-staging.yaml")
+PROD=$(render -f "$CHART/values-prod.yaml")
 
 # --- realm -----------------------------------------------------------------------------------------------------
 realm=$(helm template identity "$CHART" -f "$CHART/values-dev.yaml" --show-only templates/realm.yaml 2>/dev/null \
@@ -63,9 +64,26 @@ has 'identity_staging' "$STAGING" && ! has 'identity_dev' "$STAGING" \
 has 'key: meterbook-dev/database' "$STAGING" \
   && ok "staging reads the dev database location (shared cluster and instance)" || bad "staging reads the dev database location"
 has 'key: meterbook-dev/database' "$DEV" && ok "dev reads its own database location" || bad "dev reads its own database location"
+has 'key: meterbook-prod/database' "$PROD" && ! grep -qE 'meterbook-(dev|staging)|identity_(dev|staging)|keycloak_(dev|staging)' <<<"$PROD" \
+  && ok "prod uses only its own database, secrets and names" || bad "prod uses only its own database, secrets and names"
+
+# --- availability: prod (and dev, which mirrors it) run two replicas of each with a PDB; staging one, without --------
+replicas() { # replicas <manifests> <deployment name>: spec.replicas of that Deployment
+  awk -v want="$2" '/^---/ {kind=""; name=""} /^kind: / {kind=$2} /^  name: / && name=="" {name=$2}
+    /^  replicas: / && kind=="Deployment" && name==want {print $2}' <<<"$1"
+}
+pdbs() { grep -c '^kind: PodDisruptionBudget$' <<<"$1" || true; }
+for env in DEV PROD; do
+  out=${!env}
+  [ "$(replicas "$out" keycloak)" = 2 ] && [ "$(replicas "$out" identity)" = 2 ] && [ "$(pdbs "$out")" -eq 2 ] \
+    && ok "$env: two Keycloak and two identity replicas, each with a PDB" \
+    || bad "$env: two Keycloak and two identity replicas, each with a PDB"
+done
+[ "$(replicas "$STAGING" keycloak)" = 1 ] && [ "$(pdbs "$STAGING")" -eq 0 ] \
+  && ok "STAGING: one replica each and no PDB (a PDB would block drains)" || bad "STAGING: one replica each and no PDB"
 has 'jdbc:postgresql://\$\(DB_HOST\):\$\(DB_PORT\)/identity_dev\?sslmode=require' "$DEV" \
   && ok "identity connects to identity_dev over TLS" || bad "identity connects to identity_dev over TLS"
-! grep -qE 'rds\.amazonaws\.com|arn:aws' <<<"$DEV$STAGING" \
+! grep -qE 'rds\.amazonaws\.com|arn:aws' <<<"$DEV$STAGING$PROD" \
   && ok "no hostnames or ARNs in the rendered manifests (they come from Secrets Manager)" || bad "no hostnames or ARNs in the rendered manifests"
 
 # --- generated secrets -----------------------------------------------------------------------------------------

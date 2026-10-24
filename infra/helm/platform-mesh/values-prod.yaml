@@ -1,0 +1,3 @@
+# The prod cluster hosts prod only.
+namespaces:
+  - meterbook-prod

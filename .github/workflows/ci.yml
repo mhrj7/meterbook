@@ -255,10 +255,17 @@ jobs:
         run: python3 scripts/gitops_policy.py
 
   gitops-e2e:
-    name: GitOps end-to-end (kind + ArgoCD)
+    name: GitOps end-to-end (kind + ArgoCD, ${{ matrix.cluster.name }})
     needs: changes
     # ArgoCD fetches this commit from GitHub without credentials, so the repository must be public.
     if: needs.changes.outputs.gitops == 'true' && !github.event.repository.private
+    strategy:
+      fail-fast: false
+      matrix:
+        # One kind cluster per real cluster: dev and staging share one; prod has its own (same platform app names).
+        cluster:
+          - {name: dev and staging, envs: "dev staging"}
+          - {name: prod, envs: prod}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -272,12 +279,13 @@ jobs:
       - name: Run end-to-end test
         env:
           GITOPS_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          E2E_ENVS: ${{ matrix.cluster.envs }}
         run: bash tests/integration/gitops/e2e.sh | tee e2e.log
       - name: Summarise
         if: always()
         run: |
           {
-            echo '### GitOps end-to-end'
+            echo "### GitOps end-to-end (${{ matrix.cluster.name }})"
             echo '```'
             grep -E '^(PASS|FAIL|===|[0-9]+ passed)' e2e.log || true
             echo '```'

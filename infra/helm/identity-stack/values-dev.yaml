@@ -2,7 +2,7 @@
 environment: dev
 databaseSecretEnvironment: dev
 
-# Image digests: the images main built and signed at 1810c4c (cosign-verified against container.yml@main).
+# Image digests: images built and signed on main by container.yml (cosign keyless); bump each with its own PR.
 dbBootstrap:
   image:
     digest: "sha256:a25b9e89c41cd2bf12d4b15a21cf499dd0fb7ab451a32aaeda9124b0fd2a6972"
@@ -26,6 +26,10 @@ keycloak:
     - {name: KC_BOOTSTRAP_ADMIN_USERNAME, value: bootstrap-admin}
     - {name: KC_LOG_CONSOLE_OUTPUT, value: json}
     - {name: MB_PORTAL_URL, value: "http://portal.meterbook-dev.svc.cluster.local"}
+  # Two replicas, as in prod, so every dev run exercises Keycloak's clustering (JDBC_PING through the database,
+  # cluster traffic over the mesh). Staging stays at one to keep the shared cluster small.
+  replicas: 2
+  pdb: {enabled: true}
 
 identity:
   image:
@@ -45,3 +49,5 @@ identity:
     - name: DB_PASSWORD
       valueFrom: {secretKeyRef: {name: identity-db, key: password}}
     - {name: TRACING_SAMPLING_PROBABILITY, value: "1.0"}
+  replicas: 2
+  pdb: {enabled: true}

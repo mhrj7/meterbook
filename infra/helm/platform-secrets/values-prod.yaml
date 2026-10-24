@@ -17,4 +17,4 @@ externalSecrets:
     data:
       - secretKey: OIDC_CLIENT_SECRET
         remoteKey: meterbook-prod/identity-oidc-client-secret
-  # Database credentials (the RDS-managed secret) are wired in MB-T06 from the Terraform output database.secret_arn.
+  # Database credentials: the identity-stack chart reads meterbook-prod/database itself (its own ExternalSecrets).

@@ -278,9 +278,21 @@ for env in dev staging; do
   if wait_until 900 app_synced "identity-$env"; then ok "ArgoCD application identity-$env Synced"; else bad "ArgoCD application identity-$env Synced ($(app_field "identity-$env" .status.sync.status))"; fi
   if wait_until 900 app_healthy "identity-$env"; then ok "ArgoCD application identity-$env Healthy"; else bad "ArgoCD application identity-$env Healthy ($(app_field "identity-$env" .status.health.status))"; fi
   if wait_until 120 job_done "$ns"; then ok "db-bootstrap created the $env databases and roles"; else bad "db-bootstrap created the $env databases and roles"; fi
+  want=1; [ "$env" = dev ] && want=2   # dev runs prod's topology: two replicas each (identity-stack/values-dev.yaml)
   for d in keycloak identity; do
-    if wait_until 300 deploy_ready "$ns" "$d" 1; then ok "$d available in $ns"; else bad "$d available in $ns"; fi
+    if wait_until 300 deploy_ready "$ns" "$d" "$want"; then ok "$d $want/$want available in $ns"; else bad "$d $want/$want available in $ns"; fi
   done
+  if [ "$want" = 2 ]; then
+    # Both Keycloak pods must have joined one cluster (JDBC_PING through the database, traffic over the mesh),
+    # or sessions and caches would split between them.
+    keycloak_clustered() {
+      kubectl -n "$ns" logs -l app.kubernetes.io/name=keycloak --tail=-1 2>/dev/null \
+        | grep -F 'ISPN000094' | grep -qE 'cluster view for channel ISPN: \[[^]]*\] \(2\)'
+    }
+    if wait_until 300 keycloak_clustered; then ok "Keycloak's two replicas form one cluster in $ns"; else bad "Keycloak's two replicas form one cluster in $ns"; fi
+    check "Keycloak replicas run on different nodes in $ns" eq \
+      "$(kubectl -n "$ns" get pods -l app.kubernetes.io/name=keycloak -o 'jsonpath={range .items[*]}{.spec.nodeName}{"\n"}{end}' | sort -u | wc -l | tr -d ' ')" 2
+  fi
   check "identity and keycloak pods run as non-root with a read-only root filesystem in $ns" bash -c "
     kubectl -n $ns get pods -l 'app.kubernetes.io/name in (keycloak,identity)' -o jsonpath='{range .items[*]}{.spec.securityContext.runAsNonRoot} {.spec.containers[0].securityContext.readOnlyRootFilesystem}{\"\\n\"}{end}' \
       | grep -v '^true true$' | grep -q . && exit 1 || exit 0"
