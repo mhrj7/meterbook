@@ -127,14 +127,21 @@ ok "${NAMESPACES% } enrolled in the ambient mesh"
 [ "$(kubectl -n istio-system get peerauthentication default -o 'jsonpath={.spec.mtls.mode}')" = STRICT ] \
   || die "mesh-wide PeerAuthentication is not STRICT"
 ok "mesh-wide PeerAuthentication STRICT"
-# Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext.
-if probe "meterbook-$FIRST" plaintext-client istio.io/dataplane-mode=none >/dev/null 2>&1; then
+# Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext. The client runs
+# first and calls once Ready, so ztunnel already knows it; its rejection is then found by the client's address.
+kubectl -n "meterbook-$FIRST" run plaintext-client --image=busybox:1.37 --restart=Never \
+  --labels=istio.io/dataplane-mode=none --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' -- sleep 600 >/dev/null
+kubectl -n "meterbook-$FIRST" wait --for=condition=Ready pod/plaintext-client --timeout=120s >/dev/null
+CLIENT_IP=$(kubectl -n "meterbook-$FIRST" get pod plaintext-client -o 'jsonpath={.status.podIP}')
+if kubectl -n "meterbook-$FIRST" exec plaintext-client -- \
+     wget -q -T 5 -O- "http://smoke.meterbook-$FIRST.svc.cluster.local/healthz" >/dev/null 2>&1; then
   die "a plaintext client reached smoke despite strict mTLS"
 fi
 # It must be the mesh that refused it, not some other failure: ztunnel names the strict policy.
-wait_until 60 "ztunnel to log the refused plaintext connection" bash -c \
-  "kubectl -n istio-system logs -l app=ztunnel --since=5m --tail=-1 2>/dev/null | grep -F 'src.workload=\"plaintext-client\"' \
+wait_until 60 "ztunnel to log the refused plaintext connection from $CLIENT_IP" bash -c \
+  "kubectl -n istio-system logs -l app=ztunnel --since=5m --tail=-1 2>/dev/null | grep -F 'src.addr=$CLIENT_IP:' \
      | grep -qF 'policy rejection: explicitly denied by: istio-system/istio_converted_static_strict'"
+kubectl -n "meterbook-$FIRST" delete pod plaintext-client --wait=false >/dev/null
 ok "plaintext request from a pod outside the mesh rejected by strict mTLS, although the NetworkPolicy admits it"
 probe "meterbook-$FIRST" mesh-client >/dev/null || die "an in-mesh client could not reach smoke"
 ok "in-mesh request to smoke succeeds"

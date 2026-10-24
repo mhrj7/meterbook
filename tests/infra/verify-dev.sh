@@ -241,18 +241,26 @@ done
 check "mesh-wide PeerAuthentication is STRICT" eq \
   "$(kubectl -n istio-system get peerauthentication default -o 'jsonpath={.spec.mtls.mode}')" STRICT
 # Same namespace, so the NetworkPolicy admits it; outside the mesh, so it can only speak plaintext.
+# The client runs first and calls once Ready, so ztunnel already knows it; its rejection is found by its address.
+kubectl -n meterbook-dev delete pod plaintext-client --ignore-not-found --wait=true >/dev/null 2>&1 || true
+kubectl -n meterbook-dev run plaintext-client --image=busybox:1.37 --restart=Never \
+  --labels=istio.io/dataplane-mode=none --overrides='{"spec":{"securityContext":{"runAsNonRoot":true,"runAsUser":65534,"seccompProfile":{"type":"RuntimeDefault"}}}}' -- sleep 600 >/dev/null 2>&1 || true
+kubectl -n meterbook-dev wait --for=condition=Ready pod/plaintext-client --timeout=120s >/dev/null 2>&1 || true
+CLIENT_IP=$(kubectl -n meterbook-dev get pod plaintext-client -o 'jsonpath={.status.podIP}' 2>/dev/null)
 ztunnel_refused() { # the mesh, not some other failure, refused the plaintext client: ztunnel names the strict policy
-  kubectl -n istio-system logs -l app=ztunnel --all-containers --since=15m --tail=-1 2>/dev/null \
-    | grep -F 'src.workload="plaintext-client"' \
+  [ -n "$CLIENT_IP" ] && kubectl -n istio-system logs -l app=ztunnel --all-containers --since=15m --tail=-1 2>/dev/null \
+    | grep -F "src.addr=$CLIENT_IP:" \
     | grep -qF 'policy rejection: explicitly denied by: istio-system/istio_converted_static_strict'
 }
-if probe meterbook-dev plaintext-client istio.io/dataplane-mode=none >/dev/null 2>&1; then
+if kubectl -n meterbook-dev exec plaintext-client -- \
+     wget -q -T 5 -O- http://smoke.meterbook-dev.svc.cluster.local/healthz >/dev/null 2>&1; then
   bad "mesh: plaintext from a pod outside the mesh is rejected by strict mTLS, although the NetworkPolicy admits it"
 elif wait_until 60 ztunnel_refused; then
   ok "mesh: plaintext from a pod outside the mesh is rejected by strict mTLS, although the NetworkPolicy admits it"
 else
   bad "mesh: plaintext from a pod outside the mesh is rejected by strict mTLS (no policy rejection in ztunnel's log)"
 fi
+kubectl -n meterbook-dev delete pod plaintext-client --wait=false >/dev/null 2>&1 || true
 if probe meterbook-dev mesh-client >/dev/null 2>&1; then ok "mesh: an in-mesh client reaches smoke"; else bad "mesh: an in-mesh client reaches smoke"; fi
 ztunnel_saw() { # ztunnel_saw <destination workload prefix> <source service account path>
   kubectl -n istio-system logs -l app=ztunnel --all-containers --since=15m --tail=-1 2>/dev/null \
