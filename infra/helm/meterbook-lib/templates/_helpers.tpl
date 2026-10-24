@@ -43,4 +43,12 @@ Guard rails. Every service renders this first; a values file cannot produce an u
 {{- if not .Values.resources.requests }}{{ fail "resources.requests are required" }}{{ end -}}
 {{- if not (and .Values.resources.limits .Values.resources.limits.memory) }}{{ fail "resources.limits.memory is required" }}{{ end -}}
 {{- if and .Values.autoscaling.enabled (lt (int .Values.autoscaling.maxReplicas) (int .Values.autoscaling.minReplicas)) }}{{ fail "autoscaling.maxReplicas must be >= minReplicas" }}{{ end -}}
+{{- $probePort := .Values.probes.port | default "http" -}}
+{{- if not (has $probePort (list "http" "management")) }}{{ fail "probes.port must be http or management" }}{{ end -}}
+{{- if and (eq $probePort "management") (not .Values.managementPort) }}{{ fail "probes.port=management needs managementPort" }}{{ end -}}
+{{- range concat (.Values.writablePaths | default list) (.Values.configFiles | default list) -}}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$" (toString .name)) }}{{ fail (printf "volume name %q must be a DNS label" (toString .name)) }}{{ end -}}
+{{- if eq (toString .name) "tmp" }}{{ fail "volume name tmp is reserved" }}{{ end -}}
+{{- if not (hasPrefix "/" (toString .path)) }}{{ fail (printf "volume %s needs an absolute path" .name) }}{{ end -}}
+{{- end -}}
 {{- end }}

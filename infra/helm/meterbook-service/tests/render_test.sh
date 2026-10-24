@@ -86,6 +86,25 @@ expect_render_fails "requires a memory limit" "limits.memory is required" -f "$S
 expect_render_fails "rejects maxReplicas below minReplicas" "maxReplicas must be >= minReplicas" -f "$SMOKE" \
   --set autoscaling.enabled=true --set autoscaling.minReplicas=4 --set autoscaling.maxReplicas=2
 
+
+# --- management port, writable paths, config files -------------------------------------------------------------
+MGMT="$CHART/tests/management-values.yaml"
+out=$(render -f "$MGMT")
+has 'name: management' "$out" && has 'containerPort: 9000' "$out" && ok "declares the management port" || bad "declares the management port"
+[ "$(count 'port: management' "$out")" -eq 3 ] && ok "all three probes use the management port" || bad "all three probes use the management port"
+svc=$(awk '/^kind: Service$/,/^---/' <<<"$out")
+! has '9000' "$svc" && ok "the Service does not expose the management port" || bad "the Service does not expose the management port"
+has 'mountPath: /opt/keycloak/data$' "$out" && has 'sizeLimit: 256Mi' "$out" && ok "mounts a size-limited writable path" || bad "mounts a size-limited writable path"
+has 'name: keycloak-realm' "$out" && has 'readOnly: true' "$out" && ok "mounts a ConfigMap read-only" || bad "mounts a ConfigMap read-only"
+has 'readOnlyRootFilesystem: true' "$out" && ok "root filesystem stays read-only with extra mounts" || bad "root filesystem stays read-only with extra mounts"
+out=$(render -f "$SMOKE")
+[ "$(count 'port: http$' "$out")" -ge 3 ] && ! has 'name: management' "$out" && ok "probes default to the http port" || bad "probes default to the http port"
+expect_render_fails "probes on management need a management port" "needs managementPort" -f "$MGMT" --set managementPort=0
+expect_render_fails "rejects an unknown probe port" "must be http or management" -f "$MGMT" --set probes.port=admin
+expect_render_fails "reserves the tmp volume name" "tmp is reserved" -f "$MGMT" --set 'writablePaths[0].name=tmp' --set 'writablePaths[0].path=/x'
+expect_render_fails "requires DNS-label volume names" "must be a DNS label" -f "$MGMT" --set 'configFiles[0].name=Bad_Name'
+expect_render_fails "requires absolute mount paths" "needs an absolute path" -f "$MGMT" --set 'writablePaths[0].path=relative'
+
 echo "---"
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
