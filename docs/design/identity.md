@@ -22,10 +22,11 @@ tells other services who is calling (ADR-0007).
 - G4: `GET /v1/me` p99 ≤ 50 ms in-cluster (token validated locally against cached JWKS).
 - G5 (MB-T08): tenants organise their work in projects, each with a live and a test environment; a cross-tenant read
   fails closed even when the application forgets to filter (row-level security, ADR-0009).
+- G6 (MB-T09): machines call Meterbook with environment-scoped API keys; a revoked key is rejected by every service
+  within 60 s (TC-PLT-003, ADR-0010).
 
 **Non-goals:**
 - NG2: Fine-grained RBAC and the audit log (MB-T11); MB-T07 has two roles, `platform-admin` and `tenant-admin`.
-- NG3: API keys for machine access (MB-T09).
 - NG4: Proving domain ownership by DNS record (MB-T11). Until then only a platform admin can add a domain to a tenant.
 
 ## 3. Background
@@ -48,6 +49,9 @@ they sign; most self-serve users sign in with a password.
 - FR6: `GET /v1/me` returns the caller's user ID, tenant ID, email, name, roles and how they signed in.
 - FR7 (MB-T08): tenant admins create, rename and list projects; each new project gets `production` (live) and
   `sandbox` (test) environments; admins add environments. Members read projects and environments.
+- FR8 (MB-T09): tenant admins create API keys for an environment with a name, scopes and an optional expiry (the key
+  is shown once), list them, rotate them with a grace period and revoke them. `GET /v1/api-key` tells the holder of
+  a key what it may do; services verify keys with it.
 
 ### Non-functional
 | Requirement | Target | How measured |
@@ -57,6 +61,8 @@ they sign; most self-serve users sign in with a password.
 | Throughput | 500 logins/s; 5,000 `/v1/me` per second per replica | k6 |
 | Deprovisioning | sessions ended before the SCIM response; access tokens live 5 min | SSO e2e test |
 | Tenant isolation | every cross-tenant read returns 404 | isolation tests |
+| Key revocation | rejected by identity at once, by every service within 60 s (callers cache ≤ 30 s) | API test; EKS check |
+| Key verification (p99) | `GET /v1/api-key` ≤ 20 ms in-cluster | k6 (LR-PLT-01) |
 
 ## 5. Capacity estimate
 
@@ -93,7 +99,8 @@ flowchart LR
 
 ### 7.1 API
 
-`contracts/openapi/identity-v1.yaml`: `/v1/me`, `/v1/tenants`, `/v1/sso-connections`, `/v1/scim-tokens`, and the
+`contracts/openapi/identity-v1.yaml`: `/v1/me`, `/v1/tenants`, `/v1/sso-connections`, `/v1/scim-tokens`,
+`/v1/projects` (with their environments and each environment's `api-keys`), `/v1/api-key`, and the
 SCIM 2.0 surface under `/scim/v2`. SCIM uses its own media type (`application/scim+json`) and error shape
 (RFC 7644 §3.12), as SCIM clients expect; everything else follows `api-standards.md`.
 
@@ -112,6 +119,7 @@ Schema `identity` in the shared PostgreSQL instance, owned by the identity servi
 | `idempotency_keys` | `(scope, key)` | stored response for 24 h; scope is the caller's user ID |
 | `projects` (MB-T08) | `id`, `tenant_id`, `slug` unique per tenant, `name` | at most 100 per tenant |
 | `environments` (MB-T08) | `id`, `tenant_id`, `project_id`, `slug` unique per project, `kind` (`live`/`test`) | at most 20 per project |
+| `api_keys` (MB-T09) | `id`, `tenant_id`, `environment_id`, `key_hash` unique, `prefix`, `scopes`, `expires_at`, `revoked_at`, `last_used_at`, `rotated_to` | key = `mb_<kind>_` + 40 base62 + CRC-32; at most 50 live per environment |
 
 ### 7.3 Consistency, ordering and idempotency
 
@@ -155,8 +163,8 @@ Building our own authorization server, Zitadel, and hosted vendors — see ADR-0
 
 ## 9. Security and privacy
 
-- **Spoofing:** tokens validated for signature, issuer, audience, expiry; SCIM tokens are 256-bit random, compared by
-  SHA-256 hash; SAML assertions must be signed (`wantAssertionsSigned`) and are validated by Keycloak.
+- **Spoofing:** tokens validated for signature, issuer, audience, expiry; SCIM tokens are 256-bit random and API keys
+  238-bit random, both compared by SHA-256 hash and never stored or logged; SAML assertions must be signed (`wantAssertionsSigned`) and are validated by Keycloak.
 - **Tampering:** TLS everywhere; tenant never taken from request bodies.
 - **Repudiation:** every admin and SCIM change is logged with tenant, actor and request ID (audit service: MB-T11).
 - **Information disclosure:** cross-tenant access returns 404; logs never contain tokens, assertions or passwords.

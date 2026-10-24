@@ -7,7 +7,8 @@ info:
 
     Authentication: `Authorization: Bearer <access token>` issued by Meterbook's Keycloak realm. The tenant is the
     single organization named in the token; it is never read from a request body. SCIM endpoints instead take a
-    tenant SCIM token issued by `POST /v1/scim-tokens`.
+    tenant SCIM token issued by `POST /v1/scim-tokens`. `GET /v1/api-key` takes an environment API key (MB-T09,
+    ADR-0010).
   contact:
     name: Meterbook platform team
     url: https://github.com/mhrj7/meterbook
@@ -27,6 +28,8 @@ tags:
     description: Enterprise SSO connections for the caller's tenant.
   - name: projects
     description: Projects and their environments inside the caller's tenant (MB-T08).
+  - name: api-keys
+    description: Environment-scoped API keys for machine access (MB-T09).
   - name: scim-tokens
     description: Credentials for the tenant's SCIM client.
   - name: scim
@@ -325,10 +328,7 @@ paths:
   /v1/projects/{project_id}/environments/{environment_id}:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
-      - name: environment_id
-        in: path
-        required: true
-        schema: { $ref: "#/components/schemas/Id" }
+      - $ref: "#/components/parameters/EnvironmentId"
     get:
       tags: [projects]
       operationId: getEnvironment
@@ -343,6 +343,156 @@ paths:
               schema: { $ref: "#/components/schemas/Environment" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/projects/{project_id}/environments/{environment_id}/api-keys:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/EnvironmentId"
+    get:
+      tags: [api-keys]
+      operationId: listApiKeys
+      summary: List the environment's API keys (without secrets)
+      description: Revoked keys are left out; expired keys are listed until they are revoked.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+      responses:
+        "200":
+          description: A page of API keys.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKeyList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [api-keys]
+      operationId: createApiKey
+      summary: Create an API key
+      description: |
+        Requires the `tenant-admin` role. At most 50 live (unrevoked, unexpired) keys per environment. The secret is returned once and
+        stored only as a hash, so a repeat with the same Idempotency-Key returns 409 `idempotency_key_used` naming
+        the created key instead of the secret.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateApiKey" }
+      responses:
+        "201":
+          description: Key created.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKeyWithSecret" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/projects/{project_id}/environments/{environment_id}/api-keys/{api_key_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/EnvironmentId"
+      - $ref: "#/components/parameters/ApiKeyId"
+    get:
+      tags: [api-keys]
+      operationId: getApiKey
+      summary: Get an API key (without its secret)
+      responses:
+        "200":
+          description: The key.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [api-keys]
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      description: |
+        Requires the `tenant-admin` role. Identity rejects the key from the moment this returns; services that cache
+        verifications (at most 30 s, see `GET /v1/api-key`) reject it within 30 s.
+      responses:
+        "204":
+          description: Revoked.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/projects/{project_id}/environments/{environment_id}/api-keys/{api_key_id}/rotate:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/EnvironmentId"
+      - $ref: "#/components/parameters/ApiKeyId"
+    post:
+      tags: [api-keys]
+      operationId: rotateApiKey
+      summary: Replace an API key, keeping the old one working for a grace period
+      description: |
+        Requires the `tenant-admin` role. Creates a key with the same name, scopes and expiry, and makes the old key
+        expire after `grace_period_seconds` (or keeps its earlier expiry). A key can be rotated once; rotate the new
+        key next time. Like creation, the secret is not kept for idempotent replay.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RotateApiKey" }
+      responses:
+        "201":
+          description: The new key.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ApiKeyWithSecret" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+
+  /v1/api-key:
+    get:
+      tags: [api-keys]
+      operationId: getCurrentApiKey
+      summary: Describe the API key making the request
+      description: |
+        Authenticates with an API key and says where it belongs and what it may do. SDKs use it to check
+        credentials; Meterbook services use it to verify keys. A caller may cache a 200 for as long as
+        `Cache-Control` allows (at most 30 s) and must not cache a 401, so a revoked key stops working everywhere
+        within 30 s.
+      security:
+        - apiKey: []
+      responses:
+        "200":
+          description: The key is live.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Cache-Control:
+              description: "`private, max-age=30`"
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CurrentApiKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
 
   /v1/scim-tokens:
     get:
@@ -697,6 +847,10 @@ components:
       type: http
       scheme: bearer
       description: Tenant SCIM token (`mbscim_…`) from `POST /v1/scim-tokens`.
+    apiKey:
+      type: http
+      scheme: bearer
+      description: Environment API key (`mb_live_…` or `mb_test_…`) from the API keys endpoints.
 
   headers:
     RequestId:
@@ -721,6 +875,16 @@ components:
       schema: { type: string, minLength: 1, maxLength: 255 }
     ProjectId:
       name: project_id
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/Id" }
+    EnvironmentId:
+      name: environment_id
+      in: path
+      required: true
+      schema: { $ref: "#/components/schemas/Id" }
+    ApiKeyId:
+      name: api_key_id
       in: path
       required: true
       schema: { $ref: "#/components/schemas/Id" }
@@ -1049,6 +1213,89 @@ components:
           items: { $ref: "#/components/schemas/SsoConnection" }
         has_more: { type: boolean }
         next_cursor: { type: [string, "null"] }
+
+    ApiKeyScope:
+      type: string
+      enum:
+        [usage:write, usage:read, customers:read, customers:write, invoices:read, invoices:write, catalog:read, catalog:write]
+      description: What a key may do. Services enforce the scopes their endpoints need; new scopes may be added.
+
+    CreateApiKey:
+      type: object
+      required: [name, scopes]
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        scopes:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/ApiKeyScope" }
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+          description: Optional; must be in the future and at most 2 years ahead.
+
+    RotateApiKey:
+      type: object
+      additionalProperties: false
+      properties:
+        grace_period_seconds:
+          type: integer
+          minimum: 0
+          maximum: 604800
+          default: 86400
+          description: How long the old key keeps working. 0 retires it at once.
+
+    ApiKey:
+      type: object
+      required: [id, project_id, environment_id, kind, name, prefix, scopes, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        environment_id: { $ref: "#/components/schemas/Id" }
+        kind: { type: string, enum: [live, test], description: The environment's kind, also the key's prefix. }
+        name: { type: string }
+        prefix: { type: string, description: First 12 characters of the key, to recognise it. }
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/ApiKeyScope" }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: [string, "null"], format: date-time }
+        last_used_at: { type: [string, "null"], format: date-time, description: Updated at most once a minute. }
+        rotated_to: { oneOf: [{ $ref: "#/components/schemas/Id" }, { type: "null" }], description: The key that replaced this one. }
+
+    ApiKeyWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/ApiKey"
+        - type: object
+          required: [secret]
+          properties:
+            secret: { type: string, description: "Shown once. Send as `Authorization: Bearer <secret>`." }
+
+    ApiKeyList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/ApiKey" }
+        has_more: { type: boolean }
+        next_cursor: { type: [string, "null"] }
+
+    CurrentApiKey:
+      type: object
+      required: [id, tenant_id, project_id, environment_id, kind, scopes]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        tenant_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        environment_id: { $ref: "#/components/schemas/Id" }
+        kind: { type: string, enum: [live, test] }
+        scopes:
+          type: array
+          items: { $ref: "#/components/schemas/ApiKeyScope" }
+        expires_at: { type: [string, "null"], format: date-time }
 
     CreateScimToken:
       type: object
