@@ -26,8 +26,10 @@ tells other services who is calling (ADR-0007).
   within 60 s (TC-PLT-003, ADR-0010).
 
 **Non-goals:**
-- NG2: Fine-grained RBAC and the audit log (MB-T11); MB-T07 has two roles, `platform-admin` and `tenant-admin`.
-- NG4: Proving domain ownership by DNS record (MB-T11). Until then only a platform admin can add a domain to a tenant.
+- NG2: Fine-grained RBAC and the audit log (MB-T11, ADR-0013 and ADR-0014); MB-T07 has two roles, `platform-admin` and
+  `tenant-admin`.
+- NG4: Proving domain ownership by DNS record (MB-T11, ADR-0015). Until then only a platform admin can add a domain to a
+  tenant.
 
 ## 3. Background
 
@@ -166,7 +168,7 @@ Building our own authorization server, Zitadel, and hosted vendors — see ADR-0
 - **Spoofing:** tokens validated for signature, issuer, audience, expiry; SCIM tokens are 256-bit random and API keys
   238-bit random, both compared by SHA-256 hash and never stored or logged; SAML assertions must be signed (`wantAssertionsSigned`) and are validated by Keycloak.
 - **Tampering:** TLS everywhere; tenant never taken from request bodies.
-- **Repudiation:** every admin and SCIM change is logged with tenant, actor and request ID (audit service: MB-T11).
+- **Repudiation:** every admin and SCIM change is logged with tenant, actor and request ID (audit log: MB-T11, ADR-0013).
 - **Information disclosure:** cross-tenant access returns 404; logs never contain tokens, assertions or passwords.
 - **Denial of service:** Keycloak brute-force detection; per-tenant rate limits (MB-T12).
 - **Elevation of privilege:** a domain can map to only one tenant, and only a platform admin can add domains, so a
@@ -175,8 +177,8 @@ Building our own authorization server, Zitadel, and hosted vendors — see ADR-0
   any user of any other tenant); it can only create a new user. SCIM users are linked to their own tenant's IdP
   explicitly, and SCIM accepts only emails in the tenant's domains. The identity service account holds
   `manage-users`, which in Keycloak allows mapping any realm role; the adapter therefore grants only `tenant-admin`
-  (enforced in code and tested). Restricting this inside Keycloak with fine-grained admin permissions is follow-up
-  work (MB-T11).
+  (enforced in code and tested). MB-T11 removes `manage-users` and restricts the account with Keycloak's fine-grained admin
+  permissions so it cannot map any role (ADR-0014).
 - **Data:** emails and names are PII, stored only in Keycloak and `scim_users`; deleting a SCIM user deletes both.
 
 ## 10. Observability
