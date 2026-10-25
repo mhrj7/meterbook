@@ -67,8 +67,8 @@ public class AuditLog {
 
   static final String NO_REQUEST = "none";
 
-  /** The actor of changes no person made, such as a one-off backfill. */
-  public static final UUID SYSTEM = new UUID(0, 0);
+  /** The operator ID of changes the platform made on its own, such as a one-off backfill. */
+  public static final UUID PLATFORM = new UUID(0, 0);
 
   private final DSLContext db;
   private final JsonMapper json;
@@ -108,10 +108,10 @@ public class AuditLog {
   }
 
   /**
-   * Records a change the service made on its own, with no request behind it (a backfill), as {@code
-   * system}.
+   * Records a change the service made on its own, with no request behind it (a backfill), as the
+   * platform operator {@link #PLATFORM}.
    */
-  public void recordAsSystem(
+  public void recordAsPlatform(
       UUID tenant, AuditAction action, UUID target, Map<String, String> details) {
     if (!TransactionSynchronizationManager.isActualTransactionActive()) {
       throw new IllegalStateException(
@@ -119,7 +119,7 @@ public class AuditLog {
     }
     insert(
         tenant,
-        new Actor("system", SYSTEM),
+        new Actor("platform_operator", PLATFORM),
         action.code(),
         Outcome.SUCCESS,
         action.targetType(),

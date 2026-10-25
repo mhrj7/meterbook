@@ -30,9 +30,4 @@ ALTER TABLE role_bindings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE role_bindings FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON role_bindings
     USING (tenant_id = app_tenant()) WITH CHECK (tenant_id = app_tenant());
-
--- The backfill of tenant admins from Keycloak acts as the system, not as a person.
-ALTER TABLE audit_events DROP CONSTRAINT audit_events_actor_type_check;
-ALTER TABLE audit_events ADD CONSTRAINT audit_events_actor_type_check
-    CHECK (actor_type IN ('user', 'scim_token', 'platform_operator', 'system'));
 /* [jooq ignore stop] */

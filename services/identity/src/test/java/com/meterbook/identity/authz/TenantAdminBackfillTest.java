@@ -75,7 +75,7 @@ class TenantAdminBackfillTest {
   }
 
   @Test
-  void holders_of_the_old_realm_role_become_admins_once_recorded_as_system() {
+  void holders_of_the_old_realm_role_become_admins_once_recorded_as_the_platform() {
     assertThat(backfill.backfill()).isEqualTo(new TenantAdminBackfill.Result(1, 0));
     run();
 
@@ -83,8 +83,8 @@ class TenantAdminBackfillTest {
     assertThat(bindings.rolesOf(tenant, member)).isEmpty();
     var event = scope.inTenant(tenant, () -> db.selectFrom(AUDIT_EVENTS).fetchSingle());
     assertThat(event.getAction()).isEqualTo("role_binding.created");
-    assertThat(event.getActorType()).isEqualTo("system");
-    assertThat(event.getActorId()).isEqualTo(AuditLog.SYSTEM);
+    assertThat(event.getActorType()).isEqualTo("platform_operator");
+    assertThat(event.getActorId()).isEqualTo(AuditLog.PLATFORM);
     assertThat(event.getDetails().data()).contains("tenant_admin_backfill");
     assertThat(db.fetchExists(BACKFILLS, BACKFILLS.NAME.eq(TenantAdminBackfill.NAME))).isTrue();
 
@@ -96,7 +96,7 @@ class TenantAdminBackfillTest {
 
   @Test
   void an_admin_who_already_has_a_binding_is_left_alone() {
-    scope.inTenant(tenant, () -> bindings.bindAdminAsSystem(tenant, legacyAdmin));
+    scope.inTenant(tenant, () -> bindings.bindAdminAsPlatform(tenant, legacyAdmin));
     assertThat(backfill.backfill().added()).isZero();
     assertThat(scope.inTenant(tenant, () -> db.fetchCount(AUDIT_EVENTS))).isEqualTo(1);
   }

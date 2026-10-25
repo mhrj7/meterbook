@@ -1546,12 +1546,12 @@ components:
           enum: [success, denied, not_found]
         actor:
           type: object
+          description: |
+            Who acted: a user, a SCIM token or an operator. A change the platform made on its own, with no person
+            behind it (the one-off backfill of tenant admins), is a `platform_operator` with the nil UUID.
           required: [type, id]
           properties:
-            type:
-              type: string
-              description: "`system` for changes no person made, such as the one-off backfill of tenant admins."
-              enum: [user, scim_token, platform_operator, system]
+            type: { type: string, enum: [user, scim_token, platform_operator] }
             id: { $ref: "#/components/schemas/Id" }
         target:
           type: object

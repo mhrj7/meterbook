@@ -206,10 +206,10 @@ public class RoleBindings {
   }
 
   /**
-   * Makes {@code user} an admin unless they already are, as the system (the backfill); returns
+   * Makes {@code user} an admin unless they already are, as the platform (the backfill); returns
    * whether a binding was added. Call it in the tenant's scope.
    */
-  boolean bindAdminAsSystem(UUID tenant, UUID user) {
+  boolean bindAdminAsPlatform(UUID tenant, UUID user) {
     UUID id = UUID.randomUUID();
     int added =
         db.insertInto(ROLE_BINDINGS)
@@ -221,7 +221,7 @@ public class RoleBindings {
             .onConflictDoNothing()
             .execute();
     if (added == 1) {
-      audit.recordAsSystem(
+      audit.recordAsPlatform(
           tenant,
           AuditAction.ROLE_BINDING_CREATED,
           id,

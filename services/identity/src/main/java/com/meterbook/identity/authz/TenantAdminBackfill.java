@@ -20,8 +20,8 @@ import org.springframework.stereotype.Component;
 /**
  * Once, at start-up: tenants created before MB-T11 had their admins only as the Keycloak realm role
  * {@code tenant-admin}, which is no longer read (ADR-0014). Each holder who is a member of a tenant
- * gets an {@code admin} binding there, recorded in that tenant's audit log as {@code system}. Safe
- * to run on several replicas at once; if Keycloak is unreachable it runs again at the next start.
+ * gets an {@code admin} binding there, recorded in that tenant's audit log as the platform. Safe to
+ * run on several replicas at once; if Keycloak is unreachable it runs again at the next start.
  */
 @Component
 public class TenantAdminBackfill implements ApplicationRunner {
@@ -80,7 +80,7 @@ public class TenantAdminBackfill implements ApplicationRunner {
       try {
         for (UUID member : directory.membersOf(tenant)) {
           if (directory.realmRolesOf(member).contains(Role.TENANT_ADMIN.claimValue())
-              && scope.inTenant(tenant, () -> bindings.bindAdminAsSystem(tenant, member))) {
+              && scope.inTenant(tenant, () -> bindings.bindAdminAsPlatform(tenant, member))) {
             added++;
           }
         }
