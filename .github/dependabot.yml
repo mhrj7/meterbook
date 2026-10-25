@@ -4,6 +4,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Same rule as hand-picked versions: nothing younger than two weeks (security fixes are picked by hand).
+    cooldown:
+      default-days: 14
     groups:
       actions:
         patterns: ["*"]
@@ -18,6 +21,9 @@ updates:
       - /infra/terraform/modules/*
     schedule:
       interval: weekly
+    # Same rule as hand-picked versions: nothing younger than two weeks (security fixes are picked by hand).
+    cooldown:
+      default-days: 14
     groups:
       terraform:
         patterns: ["*"]
@@ -31,6 +37,9 @@ updates:
       - /services/*
     schedule:
       interval: weekly
+    # Same rule as hand-picked versions: nothing younger than two weeks (security fixes are picked by hand).
+    cooldown:
+      default-days: 14
     groups:
       base-images:
         patterns: ["*"]
