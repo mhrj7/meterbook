@@ -1,5 +1,7 @@
 package com.meterbook.identity.sso;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.Audited;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
@@ -84,6 +86,7 @@ public class SsoConnectionController {
   }
 
   @PostMapping("/v1/sso-connections")
+  @Audited(value = AuditAction.SSO_CONNECTION_CREATED, targetVariable = "")
   public ResponseEntity<?> create(
       CallerAuthentication auth,
       @RequestHeader(name = Idempotency.HEADER, required = false) String key,
@@ -128,11 +131,13 @@ public class SsoConnectionController {
   }
 
   @GetMapping("/v1/sso-connections/{id}")
+  @Audited(AuditAction.SSO_CONNECTION_READ)
   public SsoConnection get(CallerAuthentication auth, @PathVariable UUID id) {
     return SsoConnection.of(connections.get(auth.caller(), id));
   }
 
   @DeleteMapping("/v1/sso-connections/{id}")
+  @Audited(AuditAction.SSO_CONNECTION_DELETED)
   public ResponseEntity<Void> delete(CallerAuthentication auth, @PathVariable UUID id) {
     connections.delete(auth.caller(), id);
     return ResponseEntity.noContent().build();

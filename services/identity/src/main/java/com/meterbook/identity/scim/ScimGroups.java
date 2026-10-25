@@ -4,6 +4,8 @@ import static com.meterbook.identity.db.Tables.SCIM_GROUPS;
 import static com.meterbook.identity.db.Tables.SCIM_GROUP_MEMBERS;
 import static com.meterbook.identity.db.Tables.SCIM_USERS;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.db.tables.records.ScimGroupsRecord;
 import com.meterbook.identity.tenancy.TenantScope;
 import java.time.Clock;
@@ -53,11 +55,13 @@ public class ScimGroups {
 
   private final DSLContext db;
   private final TenantScope scope;
+  private final AuditLog audit;
   private final Clock clock;
 
-  ScimGroups(DSLContext db, TenantScope scope, Clock clock) {
+  ScimGroups(DSLContext db, TenantScope scope, AuditLog audit, Clock clock) {
     this.db = db;
     this.scope = scope;
+    this.audit = audit;
     this.clock = clock;
   }
 
@@ -89,6 +93,7 @@ public class ScimGroups {
         .set(SCIM_GROUPS.UPDATED_AT, now)
         .execute();
     addMembers(tenant, group.id(), memberIds(ScimUser.field(body, "members")));
+    audit.record(tenant, AuditAction.SCIM_GROUP_CREATED, group.id());
     return group;
   }
 
@@ -200,6 +205,7 @@ public class ScimGroups {
     if (updated == 0) {
       throw ScimException.preconditionFailed();
     }
+    audit.record(tenant, AuditAction.SCIM_GROUP_UPDATED, id);
     return new Group(
         id, displayName.trim(), externalId, current.version() + 1, current.created(), now);
   }
@@ -217,6 +223,7 @@ public class ScimGroups {
     if (deleted == 0) {
       throw ScimException.notFound("no such group");
     }
+    audit.record(tenant, AuditAction.SCIM_GROUP_DELETED, id);
   }
 
   ObjectNode toJson(UUID tenant, Group group) {

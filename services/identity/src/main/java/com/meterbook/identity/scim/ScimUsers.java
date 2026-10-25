@@ -1,5 +1,7 @@
 package com.meterbook.identity.scim;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.sso.SsoConnectionRepository;
 import com.meterbook.identity.tenancy.TenantScope;
@@ -30,6 +32,7 @@ public class ScimUsers {
   private final SsoConnectionRepository connections;
   private final Directory directory;
   private final TenantScope scope;
+  private final AuditLog audit;
   private final Clock clock;
 
   ScimUsers(
@@ -38,12 +41,14 @@ public class ScimUsers {
       SsoConnectionRepository connections,
       Directory directory,
       TenantScope scope,
+      AuditLog audit,
       Clock clock) {
     this.users = users;
     this.tenants = tenants;
     this.connections = connections;
     this.directory = directory;
     this.scope = scope;
+    this.audit = audit;
     this.clock = clock;
   }
 
@@ -90,7 +95,12 @@ public class ScimUsers {
 
       OffsetDateTime now = OffsetDateTime.now(clock);
       ScimUser user = new ScimUser(UUID.randomUUID(), keycloakUser, attributes, 1, now, now);
-      scope.inTenant(tenant, () -> users.insert(tenant, user));
+      scope.inTenant(
+          tenant,
+          () -> {
+            users.insert(tenant, user);
+            audit.record(tenant, AuditAction.SCIM_USER_CREATED, user.id());
+          });
       return user;
     } catch (RuntimeException e) {
       undoCreate(tenant, keycloakUser, created, addedMember);
@@ -114,20 +124,29 @@ public class ScimUsers {
   }
 
   ScimUser replace(UUID tenant, UUID id, ScimUser.Attributes attributes, String ifMatch) {
-    return change(tenant, get(tenant, id), attributes, ifMatch);
+    return change(tenant, get(tenant, id), attributes, ifMatch, AuditAction.SCIM_USER_REPLACED);
   }
 
   ScimUser patch(UUID tenant, UUID id, List<ScimPatch.Operation> operations, String ifMatch) {
     ScimUser current = get(tenant, id);
     return change(
-        tenant, current, ScimPatch.applyToUser(current.attributes(), operations), ifMatch);
+        tenant,
+        current,
+        ScimPatch.applyToUser(current.attributes(), operations),
+        ifMatch,
+        AuditAction.SCIM_USER_UPDATED);
   }
 
   void delete(UUID tenant, UUID id) {
     ScimUser user = get(tenant, id);
     // Keycloak first: the user's sessions and links end even if removing the row fails.
     directory.deleteUser(user.keycloakUserId());
-    scope.inTenant(tenant, () -> users.delete(tenant, id));
+    scope.inTenant(
+        tenant,
+        () -> {
+          users.delete(tenant, id);
+          audit.record(tenant, AuditAction.SCIM_USER_DELETED, id);
+        });
   }
 
   /** Links every SCIM user of the tenant to a new SSO connection. */
@@ -137,7 +156,8 @@ public class ScimUsers {
     }
   }
 
-  private ScimUser change(UUID tenant, ScimUser current, ScimUser.Attributes next, String ifMatch) {
+  private ScimUser change(
+      UUID tenant, ScimUser current, ScimUser.Attributes next, String ifMatch, AuditAction action) {
     if (ifMatch != null && !ifMatch.equals(current.etag()) && !ifMatch.equals("*")) {
       throw ScimException.preconditionFailed();
     }
@@ -187,6 +207,14 @@ public class ScimUsers {
                 .forTenant(tenant)
                 .ifPresent(c -> directory.linkIdentity(kc, c.keycloakAlias(), next.email()));
           }
+          // Whether the user can sign in is what security teams look for; the values stay out.
+          audit.record(
+              tenant,
+              action,
+              current.id(),
+              before.active() == next.active()
+                  ? Map.of()
+                  : Map.of("active", String.valueOf(next.active())));
         });
     return updated;
   }

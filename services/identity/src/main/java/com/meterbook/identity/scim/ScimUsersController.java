@@ -1,5 +1,7 @@
 package com.meterbook.identity.scim;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.Audited;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +44,7 @@ public class ScimUsersController {
   }
 
   @PostMapping
+  @Audited(value = AuditAction.SCIM_USER_CREATED, targetVariable = "")
   ResponseEntity<ObjectNode> create(ScimAuthentication auth, @RequestBody JsonNode body) {
     ScimUser user = users.create(auth.tenantId(), ScimUser.Attributes.from(body));
     return ResponseEntity.created(URI.create("/scim/v2/Users/" + user.id()))
@@ -51,6 +54,7 @@ public class ScimUsersController {
   }
 
   @GetMapping("/{id}")
+  @Audited(AuditAction.SCIM_USER_READ)
   ResponseEntity<ObjectNode> get(ScimAuthentication auth, @PathVariable UUID id) {
     return render(auth.tenantId(), users.get(auth.tenantId(), id));
   }
@@ -78,6 +82,7 @@ public class ScimUsersController {
   }
 
   @PutMapping("/{id}")
+  @Audited(AuditAction.SCIM_USER_REPLACED)
   ResponseEntity<ObjectNode> replace(
       ScimAuthentication auth,
       @PathVariable UUID id,
@@ -89,6 +94,7 @@ public class ScimUsersController {
   }
 
   @PatchMapping("/{id}")
+  @Audited(AuditAction.SCIM_USER_UPDATED)
   ResponseEntity<ObjectNode> patch(
       ScimAuthentication auth,
       @PathVariable UUID id,
@@ -99,6 +105,7 @@ public class ScimUsersController {
   }
 
   @DeleteMapping("/{id}")
+  @Audited(AuditAction.SCIM_USER_DELETED)
   ResponseEntity<Void> delete(ScimAuthentication auth, @PathVariable UUID id) {
     users.delete(auth.tenantId(), id);
     return ResponseEntity.noContent().build();

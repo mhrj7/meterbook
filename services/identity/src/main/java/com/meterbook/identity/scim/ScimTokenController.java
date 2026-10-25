@@ -1,5 +1,7 @@
 package com.meterbook.identity.scim;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.Audited;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
@@ -60,6 +62,7 @@ public class ScimTokenController {
   }
 
   @PostMapping("/v1/scim-tokens")
+  @Audited(value = AuditAction.SCIM_TOKEN_CREATED, targetVariable = "")
   public ResponseEntity<?> create(
       CallerAuthentication auth,
       @RequestHeader(name = Idempotency.HEADER, required = false) String key,
@@ -102,6 +105,7 @@ public class ScimTokenController {
   }
 
   @DeleteMapping("/v1/scim-tokens/{id}")
+  @Audited(AuditAction.SCIM_TOKEN_REVOKED)
   public ResponseEntity<Void> revoke(CallerAuthentication auth, @PathVariable UUID id) {
     tokens.revoke(auth.caller(), id);
     return ResponseEntity.noContent().build();

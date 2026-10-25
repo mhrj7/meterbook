@@ -17,7 +17,7 @@ public class RequestIdFilter extends OncePerRequestFilter {
 
   public static final String HEADER = "Request-Id";
   public static final String ATTRIBUTE = RequestIdFilter.class.getName() + ".id";
-  static final String MDC_KEY = "request_id";
+  public static final String MDC_KEY = "request_id";
 
   private final RequestIds ids;
 

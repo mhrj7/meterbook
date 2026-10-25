@@ -1,5 +1,7 @@
 package com.meterbook.identity.scim;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.Audited;
 import java.net.URI;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +38,7 @@ public class ScimGroupsController {
   }
 
   @PostMapping
+  @Audited(value = AuditAction.SCIM_GROUP_CREATED, targetVariable = "")
   ResponseEntity<ObjectNode> create(ScimAuthentication auth, @RequestBody JsonNode body) {
     ScimGroups.Group group = groups.create(auth.tenantId(), body);
     return ResponseEntity.created(URI.create("/scim/v2/Groups/" + group.id()))
@@ -45,6 +48,7 @@ public class ScimGroupsController {
   }
 
   @GetMapping("/{id}")
+  @Audited(AuditAction.SCIM_GROUP_READ)
   ResponseEntity<ObjectNode> get(ScimAuthentication auth, @PathVariable UUID id) {
     ScimGroups.Group group = groups.get(auth.tenantId(), id);
     return ResponseEntity.ok()
@@ -77,6 +81,7 @@ public class ScimGroupsController {
   }
 
   @PatchMapping("/{id}")
+  @Audited(AuditAction.SCIM_GROUP_UPDATED)
   ResponseEntity<ObjectNode> patch(
       ScimAuthentication auth,
       @PathVariable UUID id,
@@ -90,6 +95,7 @@ public class ScimGroupsController {
   }
 
   @DeleteMapping("/{id}")
+  @Audited(AuditAction.SCIM_GROUP_DELETED)
   ResponseEntity<Void> delete(ScimAuthentication auth, @PathVariable UUID id) {
     groups.delete(auth.tenantId(), id);
     return ResponseEntity.noContent().build();

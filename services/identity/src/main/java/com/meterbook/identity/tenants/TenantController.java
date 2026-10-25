@@ -1,5 +1,7 @@
 package com.meterbook.identity.tenants;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.Audited;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import jakarta.validation.Valid;
@@ -65,6 +67,7 @@ public class TenantController {
   }
 
   @PostMapping("/v1/tenants")
+  @Audited(value = AuditAction.TENANT_CREATED, targetVariable = "")
   public ResponseEntity<?> create(
       CallerAuthentication auth,
       @RequestHeader(name = Idempotency.HEADER, required = false) String key,
@@ -86,6 +89,7 @@ public class TenantController {
   }
 
   @GetMapping("/v1/tenants/{id}")
+  @Audited(AuditAction.TENANT_READ)
   public Tenant get(CallerAuthentication auth, @PathVariable UUID id) {
     return Tenant.of(tenants.get(auth.caller(), id));
   }

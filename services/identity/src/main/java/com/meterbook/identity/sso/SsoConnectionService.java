@@ -1,5 +1,7 @@
 package com.meterbook.identity.sso;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.scim.ScimUsers;
 import com.meterbook.identity.security.Caller;
@@ -46,6 +48,7 @@ public class SsoConnectionService {
   private final SsoConnectionRepository connections;
   private final TenantScope scope;
   private final SsoProperties properties;
+  private final AuditLog audit;
   private final Clock clock;
 
   public SsoConnectionService(
@@ -54,12 +57,14 @@ public class SsoConnectionService {
       SsoConnectionRepository connections,
       TenantScope scope,
       SsoProperties properties,
+      AuditLog audit,
       Clock clock) {
     this.directory = directory;
     this.scimUsers = scimUsers;
     this.connections = connections;
     this.scope = scope;
     this.properties = properties;
+    this.audit = audit;
     this.clock = clock;
   }
 
@@ -97,7 +102,12 @@ public class SsoConnectionService {
       providerCreated = true;
       // Users provisioned before the connection existed sign in through it as themselves.
       scimUsers.linkAll(tenant, alias);
-      scope.inTenant(tenant, () -> connections.insert(stored));
+      scope.inTenant(
+          tenant,
+          () -> {
+            connections.insert(stored);
+            audit.record(tenant, AuditAction.SSO_CONNECTION_CREATED, id);
+          });
       return new Connection(stored, serviceProvider);
     } catch (RuntimeException e) {
       // The provider may exist even if the create call failed half-way; deleting a missing one is
@@ -141,7 +151,12 @@ public class SsoConnectionService {
     } catch (Directory.UnavailableException e) {
       throw unavailable();
     }
-    scope.inTenant(tenant, () -> connections.delete(tenant, id));
+    scope.inTenant(
+        tenant,
+        () -> {
+          connections.delete(tenant, id);
+          audit.record(tenant, AuditAction.SSO_CONNECTION_DELETED, id);
+        });
   }
 
   private ServiceProvider serviceProvider(String alias, UUID id) {
