@@ -18,3 +18,6 @@ to this index.
 | [0010](0010-api-keys.md) | Environment-scoped API keys, hashed at rest, verified by the identity service | Accepted | MB-T09 |
 | [0011](0011-service-mesh-mtls.md) | Service mesh mTLS with Istio in ambient mode, strict mesh-wide | Accepted | MB-T10 |
 | [0012](0012-signed-images-only.md) | Application namespaces admit only signed images (Sigstore policy-controller) | Accepted | MB-T05, MB-T06 |
+| [0013](0013-customer-audit-log.md) | A customer-facing audit log, written in the same transaction as the change | Accepted | MB-T11 |
+| [0014](0014-tenant-rbac.md) | Tenant RBAC: permissions per endpoint, roles bound in the identity database, SCIM groups as subjects | Accepted | MB-T11 |
+| [0015](0015-domain-ownership-by-dns.md) | Tenants prove domain ownership with a DNS TXT record; only verified domains route SSO and SCIM | Accepted | MB-T11 |
