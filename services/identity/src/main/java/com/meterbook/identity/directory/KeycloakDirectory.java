@@ -30,7 +30,7 @@ import tools.jackson.databind.node.ObjectNode;
 public final class KeycloakDirectory implements Directory {
 
   private static final int ATTEMPTS = 3;
-  private static final java.util.Set<String> GRANTABLE_ROLES = java.util.Set.of("tenant-admin");
+  private static final int MEMBERS_PAGE = 100;
   private static final Duration TOKEN_REFRESH_MARGIN = Duration.ofSeconds(30);
 
   private final RestClient http;
@@ -165,42 +165,52 @@ public final class KeycloakDirectory implements Directory {
   }
 
   @Override
-  public void grantRealmRole(UUID user, String role) {
-    // The service account may map any realm role (manage-users), so which roles it grants is
-    // limited here.
-    if (!GRANTABLE_ROLES.contains(role)) {
-      throw new IllegalArgumentException("the identity service does not grant " + role);
+  public List<UUID> membersOf(UUID organization) {
+    List<UUID> members = new java.util.ArrayList<>();
+    int first = 0;
+    while (true) {
+      int offset = first;
+      JsonNode page =
+          retried(
+              () ->
+                  http.get()
+                      .uri(
+                          b ->
+                              b.path(admin + "/organizations/" + organization + "/members")
+                                  .queryParam("first", offset)
+                                  .queryParam("max", MEMBERS_PAGE)
+                                  .build())
+                      .headers(this::bearer)
+                      .retrieve()
+                      .body(JsonNode.class));
+      if (page == null || page.isEmpty()) {
+        return members;
+      }
+      page.valueStream().forEach(m -> members.add(UUID.fromString(m.get("id").asString())));
+      if (page.size() < MEMBERS_PAGE) {
+        return members;
+      }
+      first += MEMBERS_PAGE;
     }
-    retried(
-        () -> {
-          // Reading a role by name needs view-realm; the roles still available to this user need
-          // only
-          // manage-users and carry the representation the mapping call wants.
-          JsonNode available =
-              http.get()
-                  .uri(admin + "/users/" + user + "/role-mappings/realm/available")
-                  .headers(this::bearer)
-                  .retrieve()
-                  .body(JsonNode.class);
-          List<JsonNode> matching =
-              available == null
-                  ? List.of()
-                  : available
-                      .valueStream()
-                      .filter(r -> role.equals(r.get("name").asString()))
-                      .toList();
-          if (matching.isEmpty()) {
-            return null; // already granted
-          }
-          http.post()
-              .uri(admin + "/users/" + user + "/role-mappings/realm")
-              .headers(this::bearer)
-              .contentType(MediaType.APPLICATION_JSON)
-              .body(matching)
-              .retrieve()
-              .toBodilessEntity();
-          return null;
-        });
+  }
+
+  @Override
+  public java.util.Set<String> realmRolesOf(UUID user) {
+    JsonNode roles =
+        retried(
+            () ->
+                http.get()
+                    .uri(admin + "/users/" + user + "/role-mappings/realm")
+                    .headers(this::bearer)
+                    .retrieve()
+                    .body(JsonNode.class));
+    if (roles == null) {
+      return java.util.Set.of();
+    }
+    return roles
+        .valueStream()
+        .map(r -> r.get("name").asString())
+        .collect(java.util.stream.Collectors.toUnmodifiableSet());
   }
 
   @Override

@@ -1,8 +1,9 @@
 package com.meterbook.identity.scim;
 
+import com.meterbook.identity.authz.TenantRole;
 import com.meterbook.identity.db.Tables;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
+import com.meterbook.identity.support.TenantMembers;
 import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -29,7 +30,7 @@ record ScimTestSupport(UUID tenant, String domain, String token) {
               .set(Tables.TENANT_DOMAINS.TENANT_ID, id)
               .execute();
         });
-    var admin = TestCallers.tenantUser(UUID.randomUUID(), id, Role.TENANT_ADMIN);
+    var admin = TenantMembers.with(db, scope, id, TenantRole.ADMIN);
     String token = TestCallers.as(admin, () -> tokens.issue(admin.caller(), "test")).secret();
     return new ScimTestSupport(id, domain, token);
   }

@@ -2,6 +2,7 @@ package com.meterbook.identity.tenants;
 
 import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.AuditLog;
+import com.meterbook.identity.authz.RoleBindings;
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
@@ -42,6 +43,7 @@ public class TenantService {
   private final TenantRepository tenants;
   private final TenantScope scope;
   private final AuditLog audit;
+  private final RoleBindings bindings;
   private final Clock clock;
 
   public TenantService(
@@ -49,19 +51,18 @@ public class TenantService {
       TenantRepository tenants,
       TenantScope scope,
       AuditLog audit,
+      RoleBindings bindings,
       Clock clock) {
     this.directory = directory;
     this.tenants = tenants;
     this.scope = scope;
     this.audit = audit;
+    this.bindings = bindings;
     this.clock = clock;
   }
 
   public TenantRepository.Tenant create(Caller caller, NewTenant request) {
-    if (!caller.has(Role.PLATFORM_ADMIN)) {
-      throw ApiException.forbidden(
-          "platform_admin_required", "only platform administrators create tenants");
-    }
+    // Only platform operators get here (tenants:create, ADR-0014).
     List<String> domains =
         request.domains().stream().map(d -> d.trim().toLowerCase(Locale.ROOT)).distinct().toList();
     String adminEmail = request.initialAdminEmail().trim().toLowerCase(Locale.ROOT);
@@ -105,7 +106,7 @@ public class TenantService {
         createdUser = admin;
       }
       directory.addMember(organization, admin);
-      directory.grantRealmRole(admin, Role.TENANT_ADMIN.claimValue());
+      UUID initialAdmin = admin;
 
       TenantRepository.Tenant tenant =
           new TenantRepository.Tenant(
@@ -116,6 +117,7 @@ public class TenantService {
           () -> {
             tenants.insert(tenant);
             audit.record(tenant.id(), AuditAction.TENANT_CREATED, tenant.id());
+            bindings.bindInitialAdmin(tenant.id(), initialAdmin);
           });
       return tenant;
     } catch (RuntimeException e) {

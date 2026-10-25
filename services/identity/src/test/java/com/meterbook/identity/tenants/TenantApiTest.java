@@ -109,8 +109,20 @@ class TenantApiTest {
     assertThat(directory.organizations).containsKey(id);
     UUID admin = directory.findUserByEmail("ada@acme-" + suffix + ".test").orElseThrow();
     assertThat(directory.members.get(admin)).containsExactly(id);
-    assertThat(directory.roles.get(admin)).containsExactly(Role.TENANT_ADMIN.claimValue());
+    // The first admin is a role binding (ADR-0014); Keycloak roles are left alone.
+    assertThat(admins(id)).containsExactly(admin);
+    assertThat(directory.roles).doesNotContainKey(admin);
     assertThat(platform(Tables.TENANTS.ID.eq(id))).isTrue();
+  }
+
+  private java.util.List<UUID> admins(UUID tenant) {
+    return scope.inTenant(
+        tenant,
+        () ->
+            db.select(Tables.ROLE_BINDINGS.USER_ID)
+                .from(Tables.ROLE_BINDINGS)
+                .where(Tables.ROLE_BINDINGS.ROLE.eq("admin"))
+                .fetch(Tables.ROLE_BINDINGS.USER_ID));
   }
 
   @Test
@@ -123,10 +135,12 @@ class TenantApiTest {
   void an_existing_directory_user_without_a_tenant_becomes_the_admin() throws Exception {
     UUID existing = directory.createUser("ada@acme-" + suffix + ".test", "", "");
 
-    createAcme().andExpect(status().isCreated());
+    String response =
+        createAcme().andExpect(status().isCreated()).andReturn().getResponse().getContentAsString();
 
     assertThat(directory.calls("createUser")).isEqualTo(1);
-    assertThat(directory.roles.get(existing)).contains("tenant-admin");
+    assertThat(admins(UUID.fromString(json.readTree(response).get("id").asString())))
+        .containsExactly(existing);
   }
 
   @Test
@@ -219,7 +233,7 @@ class TenantApiTest {
 
   @Test
   void a_directory_outage_midway_undoes_everything_and_asks_to_retry() throws Exception {
-    directory.failOn("grantRealmRole", new Directory.UnavailableException("down", null));
+    directory.failOn("addMember", new Directory.UnavailableException("down", null));
     String body =
         body("acme-" + suffix, "acme-" + suffix + ".test", "ada@acme-" + suffix + ".test");
 
@@ -250,7 +264,7 @@ class TenantApiTest {
     String slug = "acme-" + suffix;
     // Another request claims the slug between our check and our insert.
     directory.onCall(
-        "grantRealmRole",
+        "addMember",
         () ->
             scope.asPlatform(
                 "a concurrent tenant signup",
@@ -285,13 +299,40 @@ class TenantApiTest {
     mvc.perform(get(location).with(authentication(operator)))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.id").value(id.toString()));
-    mvc.perform(get(location).with(authentication(TestCallers.tenantUser(UUID.randomUUID(), id))))
+    mvc.perform(
+            get(location)
+                .with(
+                    authentication(
+                        com.meterbook.identity.support.TenantMembers.with(
+                            db, scope, id, com.meterbook.identity.authz.TenantRole.VIEWER))))
         .andExpect(status().isOk());
+    String other =
+        create(
+                operator,
+                "k-other",
+                body(
+                    "other-" + suffix,
+                    "other-" + suffix + ".test",
+                    "eve@other-" + suffix + ".test"))
+            .andReturn()
+            .getResponse()
+            .getHeader("Location");
+    UUID otherId = UUID.fromString(other.substring(other.lastIndexOf('/') + 1));
+    // A user of another tenant may read tenants, but not this one: it does not exist for them.
+    mvc.perform(
+            get(location)
+                .with(
+                    authentication(
+                        com.meterbook.identity.support.TenantMembers.with(
+                            db, scope, otherId, com.meterbook.identity.authz.TenantRole.VIEWER))))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error.code").value("tenant_not_found"));
+    // Without a role binding, nothing is readable at all: refused before looking.
     mvc.perform(
             get(location)
                 .with(authentication(TestCallers.tenantUser(UUID.randomUUID(), UUID.randomUUID()))))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.error.code").value("tenant_not_found"));
+        .andExpect(status().isForbidden())
+        .andExpect(jsonPath("$.error.code").value("permission_required"));
     mvc.perform(get("/v1/tenants/" + UUID.randomUUID()).with(authentication(operator)))
         .andExpect(status().isNotFound());
   }

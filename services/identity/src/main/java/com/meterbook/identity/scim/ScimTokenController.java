@@ -2,6 +2,8 @@ package com.meterbook.identity.scim;
 
 import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.Audited;
+import com.meterbook.identity.authz.Permission;
+import com.meterbook.identity.authz.Requires;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
@@ -62,6 +64,7 @@ public class ScimTokenController {
   }
 
   @PostMapping("/v1/scim-tokens")
+  @Requires(Permission.SCIM_TOKENS_CREATE)
   @Audited(value = AuditAction.SCIM_TOKEN_CREATED, targetVariable = "")
   public ResponseEntity<?> create(
       CallerAuthentication auth,
@@ -85,6 +88,7 @@ public class ScimTokenController {
   }
 
   @GetMapping("/v1/scim-tokens")
+  @Requires(Permission.SCIM_TOKENS_READ)
   public ScimTokenList list(
       CallerAuthentication auth,
       @RequestParam(name = "limit", defaultValue = "50") int limit,
@@ -105,6 +109,7 @@ public class ScimTokenController {
   }
 
   @DeleteMapping("/v1/scim-tokens/{id}")
+  @Requires(Permission.SCIM_TOKENS_REVOKE)
   @Audited(AuditAction.SCIM_TOKEN_REVOKED)
   public ResponseEntity<Void> revoke(CallerAuthentication auth, @PathVariable UUID id) {
     tokens.revoke(auth.caller(), id);

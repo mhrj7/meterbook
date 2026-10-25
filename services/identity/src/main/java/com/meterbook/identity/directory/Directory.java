@@ -27,7 +27,14 @@ public interface Directory {
 
   void addMember(UUID organization, UUID user);
 
-  void grantRealmRole(UUID user, String role);
+  /** The users who are members of the organization. */
+  List<UUID> membersOf(UUID organization);
+
+  /**
+   * The user's realm roles, read-only: the service never maps roles (ADR-0014); this is how the
+   * pre-MB-T11 {@code tenant-admin} holders are found once.
+   */
+  java.util.Set<String> realmRolesOf(UUID user);
 
   void updateUser(UUID user, String email, String firstName, String lastName);
 

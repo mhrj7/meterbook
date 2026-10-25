@@ -420,8 +420,8 @@ class ScimUsersApiTest {
   void a_new_sso_connection_links_the_tenants_existing_users() throws Exception {
     String id = createdId("jane");
     var admin =
-        com.meterbook.identity.security.TestCallers.tenantUser(
-            UUID.randomUUID(), acme.tenant(), com.meterbook.identity.security.Role.TENANT_ADMIN);
+        com.meterbook.identity.support.TenantMembers.with(
+            db, scope, acme.tenant(), com.meterbook.identity.authz.TenantRole.ADMIN);
     String certificate = com.meterbook.identity.sso.SigningCertificateTest.pem("idp-valid.crt");
     String body =
         "{\"display_name\":\"Okta\",\"protocol\":\"saml\",\"saml\":{\"entity_id\":\"http://www.okta.com/x\",\"sso_url\":\"https://acme.okta.com/sso\",\"signing_certificate\":"

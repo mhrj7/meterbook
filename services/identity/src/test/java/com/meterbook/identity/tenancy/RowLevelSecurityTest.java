@@ -27,7 +27,8 @@ import org.springframework.dao.DataAccessException;
 class RowLevelSecurityTest {
 
   /** Tables that hold no tenant data; every other table must force row-level security. */
-  private static final List<String> UNSCOPED = List.of("flyway_schema_history", "idempotency_keys");
+  private static final List<String> UNSCOPED =
+      List.of("backfills", "flyway_schema_history", "idempotency_keys");
 
   @Autowired DSLContext db;
   @Autowired TenantScope scope;

@@ -8,7 +8,6 @@ import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.db.tables.records.EnvironmentsRecord;
 import com.meterbook.identity.security.Caller;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.ApiException;
 import com.meterbook.identity.web.Pages;
@@ -63,7 +62,7 @@ public class Projects {
    * Creates a project with a {@code production} (live) and a {@code sandbox} (test) environment.
    */
   public Project create(Caller caller, String name, String slug) {
-    UUID tenant = adminTenant(caller);
+    UUID tenant = memberTenant(caller);
     try {
       return scope.inTenant(
           tenant,
@@ -128,7 +127,7 @@ public class Projects {
   }
 
   public Project rename(Caller caller, UUID id, String name) {
-    UUID tenant = adminTenant(caller);
+    UUID tenant = memberTenant(caller);
     return scope.inTenant(
         tenant,
         () -> {
@@ -148,7 +147,7 @@ public class Projects {
 
   public Environment createEnvironment(
       Caller caller, UUID projectId, String name, String slug, String kind) {
-    UUID tenant = adminTenant(caller);
+    UUID tenant = memberTenant(caller);
     try {
       return scope.inTenant(
           tenant,
@@ -279,15 +278,6 @@ public class Projects {
 
   private static ApiException projectNotFound() {
     return ApiException.notFound("project_not_found", "no such project");
-  }
-
-  private static UUID adminTenant(Caller caller) {
-    UUID tenant = memberTenant(caller);
-    if (!caller.has(Role.TENANT_ADMIN)) {
-      throw ApiException.forbidden(
-          "tenant_admin_required", "only tenant administrators manage projects");
-    }
-    return tenant;
   }
 
   private static UUID memberTenant(Caller caller) {

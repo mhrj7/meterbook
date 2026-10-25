@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.Audited;
+import com.meterbook.identity.authz.Permission;
+import com.meterbook.identity.authz.Requires;
 import com.meterbook.identity.support.TestDatabase;
 import java.io.IOException;
 import java.io.InputStream;
@@ -13,6 +15,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.TreeSet;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,19 +72,26 @@ class ApiContractTest {
     return out;
   }
 
+  /** Each contract operation and its {@code x-authorization}. */
   @SuppressWarnings("unchecked")
-  private static Set<String> contractOperations() throws IOException {
+  private static Map<String, String> contractOperations() throws IOException {
     Map<String, Object> contract;
     try (InputStream in = Files.newInputStream(CONTRACT)) {
       contract = new Yaml().load(in);
     }
-    Set<String> operations = new TreeSet<>();
+    Map<String, String> operations = new TreeMap<>();
     ((Map<String, Map<String, Object>>) contract.get("paths"))
         .forEach(
             (path, item) ->
-                item.keySet().stream()
-                    .filter(METHODS::contains)
-                    .forEach(method -> operations.add(operation(method, path))));
+                item.forEach(
+                    (method, operation) -> {
+                      if (METHODS.contains(method)) {
+                        operations.put(
+                            operation(method, path),
+                            String.valueOf(
+                                ((Map<String, Object>) operation).get("x-authorization")));
+                      }
+                    }));
     return operations;
   }
 
@@ -90,7 +100,28 @@ class ApiContractTest {
     Set<String> served = new TreeSet<>();
     endpoints().forEach(e -> served.add(e.operation()));
 
-    assertThat(served).isEqualTo(contractOperations());
+    assertThat(served).isEqualTo(contractOperations().keySet());
+  }
+
+  @Test
+  void every_endpoint_requires_the_permission_its_contract_names() throws IOException {
+    Map<String, String> contract = contractOperations();
+    Set<String> codes = new TreeSet<>();
+    for (Permission p : Permission.values()) {
+      codes.add(p.code());
+    }
+    for (Endpoint e : endpoints()) {
+      String declared = contract.get(e.operation());
+      Requires requires = e.handler().getMethodAnnotation(Requires.class);
+      if (codes.contains(declared)) {
+        assertThat(requires).as(e.operation() + " needs @Requires").isNotNull();
+        assertThat(requires.value().code()).as(e.operation()).isEqualTo(declared);
+      } else {
+        // Authorized by its credential alone: any access token, a SCIM token or an API key.
+        assertThat(declared).as(e.operation()).isIn("authenticated", "scim_token", "api_key");
+        assertThat(requires).as(e.operation() + " has no permission").isNull();
+      }
+    }
   }
 
   @Test

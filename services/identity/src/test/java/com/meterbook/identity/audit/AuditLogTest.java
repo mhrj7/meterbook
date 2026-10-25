@@ -4,12 +4,13 @@ import static com.meterbook.identity.db.Tables.AUDIT_EVENTS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.meterbook.identity.authz.TenantRole;
 import com.meterbook.identity.db.Tables;
 import com.meterbook.identity.scim.ScimCallers;
 import com.meterbook.identity.scim.ScimTokens;
 import com.meterbook.identity.security.CallerAuthentication;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
+import com.meterbook.identity.support.TenantMembers;
 import com.meterbook.identity.support.TestDatabase;
 import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.RequestIdFilter;
@@ -45,7 +46,7 @@ class AuditLogTest {
   void tenants() {
     a = newTenant();
     b = newTenant();
-    admin = TestCallers.tenantUser(UUID.randomUUID(), a, Role.TENANT_ADMIN);
+    admin = TenantMembers.with(db, scope, a, TenantRole.ADMIN);
     MDC.put(RequestIdFilter.MDC_KEY, "req_test");
   }
 

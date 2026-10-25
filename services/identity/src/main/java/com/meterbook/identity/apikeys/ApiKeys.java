@@ -7,7 +7,6 @@ import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.db.tables.records.ApiKeysRecord;
 import com.meterbook.identity.security.Caller;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.ApiException;
 import com.meterbook.identity.web.Pages;
@@ -118,7 +117,7 @@ public class ApiKeys {
       String name,
       List<String> scopes,
       Optional<OffsetDateTime> expiresAt) {
-    UUID tenant = adminTenant(caller);
+    UUID tenant = memberTenant(caller);
     List<String> checked = checkedScopes(scopes);
     OffsetDateTime now = OffsetDateTime.now(clock);
     expiresAt.ifPresent(at -> checkExpiry(at, now));
@@ -195,7 +194,7 @@ public class ApiKeys {
 
   /** Revokes a key at once; identity rejects it from the next request. */
   public void revoke(Caller caller, UUID projectId, UUID environmentId, UUID id) {
-    UUID tenant = adminTenant(caller);
+    UUID tenant = memberTenant(caller);
     scope.inTenant(
         tenant,
         () -> {
@@ -222,7 +221,7 @@ public class ApiKeys {
    */
   public Issued rotate(
       Caller caller, UUID projectId, UUID environmentId, UUID id, Duration gracePeriod) {
-    UUID tenant = adminTenant(caller);
+    UUID tenant = memberTenant(caller);
     OffsetDateTime now = OffsetDateTime.now(clock);
     return scope.inTenant(
         tenant,
@@ -464,15 +463,6 @@ public class ApiKeys {
 
   private static ApiException environmentNotFound() {
     return ApiException.notFound("environment_not_found", "no such environment");
-  }
-
-  private static UUID adminTenant(Caller caller) {
-    UUID tenant = memberTenant(caller);
-    if (!caller.has(Role.TENANT_ADMIN)) {
-      throw ApiException.forbidden(
-          "tenant_admin_required", "only tenant administrators manage API keys");
-    }
-    return tenant;
   }
 
   private static UUID memberTenant(Caller caller) {

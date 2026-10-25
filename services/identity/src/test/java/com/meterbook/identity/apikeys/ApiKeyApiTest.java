@@ -9,12 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.meterbook.identity.authz.TenantRole;
 import com.meterbook.identity.db.Tables;
 import com.meterbook.identity.projects.Projects;
 import com.meterbook.identity.security.CallerAuthentication;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
 import com.meterbook.identity.support.MutableClock;
+import com.meterbook.identity.support.TenantMembers;
 import com.meterbook.identity.support.TestDatabase;
 import com.meterbook.identity.tenancy.TenantScope;
 import java.time.Duration;
@@ -70,8 +71,8 @@ class ApiKeyApiTest {
   @BeforeEach
   void environment() {
     tenant = newTenant();
-    admin = TestCallers.tenantUser(UUID.randomUUID(), tenant, Role.TENANT_ADMIN);
-    member = TestCallers.tenantUser(UUID.randomUUID(), tenant);
+    admin = TenantMembers.with(db, scope, tenant, TenantRole.ADMIN);
+    member = TenantMembers.with(db, scope, tenant, TenantRole.VIEWER);
     project = TestCallers.as(admin, () -> projects.create(admin.caller(), "Checkout", "checkout"));
     production = project.environments().get(0).id().toString();
     sandbox = project.environments().get(1).id().toString();
@@ -387,7 +388,7 @@ class ApiKeyApiTest {
         .andExpect(jsonPath("$.data[0].secret").doesNotExist());
     create(member, sandbox, "{\"name\":\"x\",\"scopes\":[\"usage:read\"]}")
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.error.code").value("tenant_admin_required"));
+        .andExpect(jsonPath("$.error.code").value("permission_required"));
     mvc.perform(delete(keys(sandbox) + "/" + id).with(authentication(member)))
         .andExpect(status().isForbidden());
     mvc.perform(
@@ -413,7 +414,7 @@ class ApiKeyApiTest {
     mvc.perform(delete(keys(production) + "/" + id).with(authentication(admin)))
         .andExpect(status().isNotFound());
 
-    var intruder = TestCallers.tenantUser(UUID.randomUUID(), newTenant(), Role.TENANT_ADMIN);
+    var intruder = TenantMembers.with(db, scope, newTenant(), TenantRole.ADMIN);
     mvc.perform(get(keys(sandbox)).with(authentication(intruder)))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error.code").value("environment_not_found"));

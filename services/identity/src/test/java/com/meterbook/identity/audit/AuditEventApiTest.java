@@ -8,10 +8,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.meterbook.identity.authz.TenantRole;
 import com.meterbook.identity.db.Tables;
 import com.meterbook.identity.security.CallerAuthentication;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
+import com.meterbook.identity.support.TenantMembers;
 import com.meterbook.identity.support.TestDatabase;
 import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
@@ -56,7 +57,7 @@ class AuditEventApiTest {
                 .set(Tables.TENANTS.NAME, "Tenant")
                 .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
                 .execute());
-    admin = TestCallers.tenantUser(UUID.randomUUID(), tenant, Role.TENANT_ADMIN);
+    admin = TenantMembers.with(db, scope, tenant, TenantRole.ADMIN);
   }
 
   private String project(String slug) throws Exception {
@@ -144,7 +145,7 @@ class AuditEventApiTest {
     CallerAuthentication member = TestCallers.tenantUser(UUID.randomUUID(), tenant);
     mvc.perform(get("/v1/audit-events").with(authentication(member)))
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.error.code").value("tenant_admin_required"));
+        .andExpect(jsonPath("$.error.code").value("permission_required"));
     mvc.perform(
             get("/v1/audit-events")
                 .with(authentication(TestCallers.platformAdmin(UUID.randomUUID()))))
@@ -197,8 +198,7 @@ class AuditEventApiTest {
                 .set(Tables.TENANTS.NAME, "Other")
                 .set(Tables.TENANTS.CREATED_AT, OffsetDateTime.now(ZoneOffset.UTC))
                 .execute());
-    CallerAuthentication otherAdmin =
-        TestCallers.tenantUser(UUID.randomUUID(), other, Role.TENANT_ADMIN);
+    CallerAuthentication otherAdmin = TenantMembers.with(db, scope, other, TenantRole.ADMIN);
 
     mvc.perform(get("/v1/audit-events?starting_after=" + cursor).with(authentication(otherAdmin)))
         .andExpect(status().isOk())

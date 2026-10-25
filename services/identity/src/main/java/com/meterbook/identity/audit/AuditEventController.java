@@ -1,5 +1,7 @@
 package com.meterbook.identity.audit;
 
+import com.meterbook.identity.authz.Permission;
+import com.meterbook.identity.authz.Requires;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
 import com.meterbook.identity.web.Pages;
@@ -31,6 +33,7 @@ public class AuditEventController {
   }
 
   @GetMapping("/v1/audit-events")
+  @Requires(Permission.AUDIT_EVENTS_READ)
   @Audited(value = AuditAction.AUDIT_EVENTS_READ, targetVariable = "")
   public AuditEventList list(
       CallerAuthentication auth,

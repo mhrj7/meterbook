@@ -2,6 +2,8 @@ package com.meterbook.identity.apikeys;
 
 import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.Audited;
+import com.meterbook.identity.authz.Permission;
+import com.meterbook.identity.authz.Requires;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
@@ -149,6 +151,7 @@ public class ApiKeyController {
   }
 
   @PostMapping(KEYS)
+  @Requires(Permission.API_KEYS_CREATE)
   @Audited(
       value = AuditAction.API_KEY_CREATED,
       targetVariable = "environmentId",
@@ -180,6 +183,7 @@ public class ApiKeyController {
   }
 
   @GetMapping(KEYS)
+  @Requires(Permission.API_KEYS_READ)
   @Audited(
       value = AuditAction.API_KEY_READ,
       targetVariable = "environmentId",
@@ -206,6 +210,7 @@ public class ApiKeyController {
   }
 
   @GetMapping(KEYS + "/{id}")
+  @Requires(Permission.API_KEYS_READ)
   @Audited(AuditAction.API_KEY_READ)
   public ApiKey get(
       CallerAuthentication auth,
@@ -216,6 +221,7 @@ public class ApiKeyController {
   }
 
   @DeleteMapping(KEYS + "/{id}")
+  @Requires(Permission.API_KEYS_REVOKE)
   @Audited(AuditAction.API_KEY_REVOKED)
   public ResponseEntity<Void> revoke(
       CallerAuthentication auth,
@@ -227,6 +233,7 @@ public class ApiKeyController {
   }
 
   @PostMapping(KEYS + "/{id}/rotate")
+  @Requires(Permission.API_KEYS_ROTATE)
   @Audited(AuditAction.API_KEY_ROTATED)
   public ResponseEntity<?> rotate(
       CallerAuthentication auth,

@@ -9,6 +9,12 @@ info:
     single organization named in the token; it is never read from a request body. SCIM endpoints instead take a
     tenant SCIM token issued by `POST /v1/scim-tokens`. `GET /v1/api-key` takes an environment API key (MB-T09,
     ADR-0010).
+
+    Authorization (MB-T11, ADR-0014): each operation names in `x-authorization` the one permission it needs, for
+    example `projects:create`. Tenant permissions come from the caller's role bindings (`GET /v1/roles` lists the
+    roles); a missing one is 403 `permission_required`, decided before anything is read. `tenants:create` needs a
+    platform operator. `authenticated` means any valid access token, `scim_token` a tenant SCIM token and `api_key`
+    an environment API key.
   contact:
     name: Meterbook platform team
     url: https://github.com/mhrj7/meterbook
@@ -36,12 +42,15 @@ tags:
     description: SCIM 2.0 service provider (RFC 7643, RFC 7644).
   - name: audit
     description: The tenant's audit log (MB-T11, ADR-0013).
+  - name: access
+    description: Roles and who holds them in the caller's tenant (MB-T11, ADR-0014).
 
 paths:
   /v1/me:
     get:
       tags: [me]
       operationId: getMe
+      x-authorization: authenticated
       summary: Describe the authenticated caller
       responses:
         "200":
@@ -64,8 +73,9 @@ paths:
     post:
       tags: [tenants]
       operationId: createTenant
+      x-authorization: tenants:create
       summary: Create a tenant and its first administrator
-      description: Requires the `platform-admin` role. Each domain can belong to only one tenant.
+      description: Requires a platform operator (`platform-admin`). Each domain can belong to only one tenant.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -93,6 +103,7 @@ paths:
     get:
       tags: [tenants]
       operationId: getTenant
+      x-authorization: tenants:read
       summary: Get a tenant
       description: Platform administrators may read any tenant; other callers only their own.
       parameters:
@@ -112,8 +123,9 @@ paths:
     get:
       tags: [sso]
       operationId: listSsoConnections
+      x-authorization: sso_connections:read
       summary: List the tenant's SSO connections
-      description: Requires the `tenant-admin` role.
+      description: Requires `sso_connections:read`.
       parameters:
         - $ref: "#/components/parameters/Limit"
         - $ref: "#/components/parameters/StartingAfter"
@@ -130,9 +142,10 @@ paths:
     post:
       tags: [sso]
       operationId: createSsoConnection
+      x-authorization: sso_connections:create
       summary: Connect the tenant's SAML 2.0 identity provider
       description: |
-        Requires the `tenant-admin` role. Logins for the tenant's email domains are routed to this IdP. Configure the
+        Requires `sso_connections:create`. Logins for the tenant's email domains are routed to this IdP. Configure the
         IdP with the returned `service_provider.entity_id` and `service_provider.acs_url`.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
@@ -166,6 +179,7 @@ paths:
     get:
       tags: [sso]
       operationId: getSsoConnection
+      x-authorization: sso_connections:read
       summary: Get an SSO connection
       responses:
         "200":
@@ -181,6 +195,7 @@ paths:
     delete:
       tags: [sso]
       operationId: deleteSsoConnection
+      x-authorization: sso_connections:delete
       summary: Delete an SSO connection
       description: Users of the connection can no longer sign in through it. Deleting twice returns 404.
       responses:
@@ -197,6 +212,7 @@ paths:
     get:
       tags: [projects]
       operationId: listProjects
+      x-authorization: projects:read
       summary: List the tenant's projects
       parameters:
         - $ref: "#/components/parameters/Limit"
@@ -214,8 +230,9 @@ paths:
     post:
       tags: [projects]
       operationId: createProject
+      x-authorization: projects:create
       summary: Create a project with a production (live) and a sandbox (test) environment
-      description: Requires the `tenant-admin` role. At most 100 projects per tenant.
+      description: Requires `projects:create`. At most 100 projects per tenant.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -244,6 +261,7 @@ paths:
     get:
       tags: [projects]
       operationId: getProject
+      x-authorization: projects:read
       summary: Get a project and its environments
       responses:
         "200":
@@ -258,8 +276,9 @@ paths:
     patch:
       tags: [projects]
       operationId: updateProject
+      x-authorization: projects:update
       summary: Rename a project
-      description: Requires the `tenant-admin` role. Setting the same name again changes nothing.
+      description: Requires `projects:update`. Setting the same name again changes nothing.
       requestBody:
         required: true
         content:
@@ -285,6 +304,7 @@ paths:
     get:
       tags: [projects]
       operationId: listEnvironments
+      x-authorization: environments:read
       summary: List a project's environments
       parameters:
         - $ref: "#/components/parameters/Limit"
@@ -302,8 +322,9 @@ paths:
     post:
       tags: [projects]
       operationId: createEnvironment
+      x-authorization: environments:create
       summary: Add an environment to a project
-      description: Requires the `tenant-admin` role. At most 20 environments per project.
+      description: Requires `environments:create`. At most 20 environments per project.
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
       requestBody:
@@ -334,6 +355,7 @@ paths:
     get:
       tags: [projects]
       operationId: getEnvironment
+      x-authorization: environments:read
       summary: Get an environment
       responses:
         "200":
@@ -353,6 +375,7 @@ paths:
     get:
       tags: [api-keys]
       operationId: listApiKeys
+      x-authorization: api_keys:read
       summary: List the environment's API keys (without secrets)
       description: Revoked keys are left out; expired keys are listed until they are revoked.
       parameters:
@@ -372,9 +395,10 @@ paths:
     post:
       tags: [api-keys]
       operationId: createApiKey
+      x-authorization: api_keys:create
       summary: Create an API key
       description: |
-        Requires the `tenant-admin` role. At most 50 live (unrevoked, unexpired) keys per environment. The secret is returned once and
+        Requires `api_keys:create`. At most 50 live (unrevoked, unexpired) keys per environment. The secret is returned once and
         stored only as a hash, so a repeat with the same Idempotency-Key returns 409 `idempotency_key_used` naming
         the created key instead of the secret.
       parameters:
@@ -408,6 +432,7 @@ paths:
     get:
       tags: [api-keys]
       operationId: getApiKey
+      x-authorization: api_keys:read
       summary: Get an API key (without its secret)
       responses:
         "200":
@@ -422,9 +447,10 @@ paths:
     delete:
       tags: [api-keys]
       operationId: revokeApiKey
+      x-authorization: api_keys:revoke
       summary: Revoke an API key
       description: |
-        Requires the `tenant-admin` role. Identity rejects the key from the moment this returns; services that cache
+        Requires `api_keys:revoke`. Identity rejects the key from the moment this returns; services that cache
         verifications (at most 30 s, see `GET /v1/api-key`) reject it within 30 s.
       responses:
         "204":
@@ -443,9 +469,10 @@ paths:
     post:
       tags: [api-keys]
       operationId: rotateApiKey
+      x-authorization: api_keys:rotate
       summary: Replace an API key, keeping the old one working for a grace period
       description: |
-        Requires the `tenant-admin` role. Creates a key with the same name, scopes and expiry, and makes the old key
+        Requires `api_keys:rotate`. Creates a key with the same name, scopes and expiry, and makes the old key
         expire after `grace_period_seconds` (or keeps its earlier expiry). A key can be rotated once; rotate the new
         key next time. Like creation, the secret is not kept for idempotent replay.
       parameters:
@@ -475,6 +502,7 @@ paths:
     get:
       tags: [api-keys]
       operationId: getCurrentApiKey
+      x-authorization: api_key
       summary: Describe the API key making the request
       description: |
         Authenticates with an API key and says where it belongs and what it may do. SDKs use it to check
@@ -500,6 +528,7 @@ paths:
     get:
       tags: [scim-tokens]
       operationId: listScimTokens
+      x-authorization: scim_tokens:read
       summary: List the tenant's SCIM tokens (without secrets)
       parameters:
         - $ref: "#/components/parameters/Limit"
@@ -517,9 +546,10 @@ paths:
     post:
       tags: [scim-tokens]
       operationId: createScimToken
+      x-authorization: scim_tokens:create
       summary: Issue a SCIM token
       description: |
-        Requires the `tenant-admin` role. The secret is returned once and stored only as a hash, so it is not kept
+        Requires `scim_tokens:create`. The secret is returned once and stored only as a hash, so it is not kept
         for idempotent replay either: repeating the request with the same Idempotency-Key returns 409
         `idempotency_key_used` naming the issued token. Revoke it and issue a new one if the secret was lost.
       parameters:
@@ -548,6 +578,7 @@ paths:
     delete:
       tags: [scim-tokens]
       operationId: revokeScimToken
+      x-authorization: scim_tokens:revoke
       summary: Revoke a SCIM token
       description: Requests with the token fail with 401 immediately after this returns.
       parameters:
@@ -568,9 +599,10 @@ paths:
     get:
       tags: [audit]
       operationId: listAuditEvents
+      x-authorization: audit_events:read
       summary: List the tenant's audit events, newest first
       description: |
-        Requires the `tenant-admin` role. Every change made through this API or SCIM is recorded with its actor and
+        Requires `audit_events:read`. Every change made through this API or SCIM is recorded with its actor and
         request ID, in the same transaction as the change. Calls refused with 403 or 404 are recorded too, as
         `denied` and `not_found`, including attempts to reach another tenant's resources: those appear here, in
         the caller's own log, never in the other tenant's. Events cannot be changed or deleted.
@@ -597,10 +629,113 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "422": { $ref: "#/components/responses/Unprocessable" }
 
+  /v1/roles:
+    get:
+      tags: [access]
+      operationId: listRoles
+      x-authorization: roles:read
+      summary: List the roles a tenant can bind, with their permissions
+      responses:
+        "200":
+          description: The fixed roles.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /v1/role-bindings:
+    get:
+      tags: [access]
+      operationId: listRoleBindings
+      x-authorization: role_bindings:read
+      summary: List who holds which role in the tenant
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - name: user_id
+          in: query
+          description: Only bindings of this user (not those of their groups).
+          schema: { $ref: "#/components/schemas/Id" }
+        - name: group_id
+          in: query
+          description: Only bindings of this SCIM group.
+          schema: { $ref: "#/components/schemas/Id" }
+      responses:
+        "200":
+          description: A page of bindings.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleBindingList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+    post:
+      tags: [access]
+      operationId: createRoleBinding
+      x-authorization: role_bindings:create
+      summary: Grant a role to a user or to a SCIM group
+      description: |
+        Requires `role_bindings:create`, and every permission of the role granted: nobody grants more than they
+        hold (403 `role_above_own`). A user must be a member of the tenant (422 `user_not_in_tenant`); a group is
+        one the tenant's SCIM client provisioned (422 `group_not_found`), and every member of the group holds the
+        role from their next request. At most 500 bindings per tenant.
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateRoleBinding" }
+      responses:
+        "201":
+          description: Role granted.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+            Location: { $ref: "#/components/headers/Location" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RoleBinding" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "503": { $ref: "#/components/responses/Unavailable" }
+
+  /v1/role-bindings/{binding_id}:
+    delete:
+      tags: [access]
+      operationId: deleteRoleBinding
+      x-authorization: role_bindings:delete
+      summary: Remove a role binding
+      description: |
+        Takes effect on the next request. The tenant's last `admin` binding to a user cannot be removed (409
+        `last_admin`): bind another admin first.
+      parameters:
+        - name: binding_id
+          in: path
+          required: true
+          schema: { $ref: "#/components/schemas/Id" }
+      responses:
+        "204":
+          description: Removed.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
   /scim/v2/ServiceProviderConfig:
     get:
       tags: [scim]
       operationId: scimServiceProviderConfig
+      x-authorization: scim_token
       summary: SCIM capabilities
       security:
         - scimToken: []
@@ -616,6 +751,7 @@ paths:
     get:
       tags: [scim]
       operationId: scimResourceTypes
+      x-authorization: scim_token
       summary: Supported SCIM resource types
       security:
         - scimToken: []
@@ -631,6 +767,7 @@ paths:
     get:
       tags: [scim]
       operationId: scimSchemas
+      x-authorization: scim_token
       summary: Supported SCIM schemas
       security:
         - scimToken: []
@@ -646,6 +783,7 @@ paths:
     get:
       tags: [scim]
       operationId: scimListUsers
+      x-authorization: scim_token
       summary: List or filter users
       description: Supports `filter=userName eq "<value>"` and `filter=externalId eq "<value>"`.
       security:
@@ -665,6 +803,7 @@ paths:
     post:
       tags: [scim]
       operationId: scimCreateUser
+      x-authorization: scim_token
       summary: Provision a user
       security:
         - scimToken: []
@@ -693,6 +832,7 @@ paths:
     get:
       tags: [scim]
       operationId: scimGetUser
+      x-authorization: scim_token
       summary: Get a user
       security:
         - scimToken: []
@@ -709,6 +849,7 @@ paths:
     put:
       tags: [scim]
       operationId: scimReplaceUser
+      x-authorization: scim_token
       summary: Replace a user
       security:
         - scimToken: []
@@ -736,6 +877,7 @@ paths:
     patch:
       tags: [scim]
       operationId: scimPatchUser
+      x-authorization: scim_token
       summary: Modify a user (e.g. deactivate with `active=false`)
       description: Deactivation disables the user in Keycloak and ends their sessions before the response returns.
       security:
@@ -763,6 +905,7 @@ paths:
     delete:
       tags: [scim]
       operationId: scimDeleteUser
+      x-authorization: scim_token
       summary: Deprovision and delete a user
       security:
         - scimToken: []
@@ -776,6 +919,7 @@ paths:
     get:
       tags: [scim]
       operationId: scimListGroups
+      x-authorization: scim_token
       summary: List or filter groups
       description: Supports `filter=displayName eq "<value>"` and `filter=externalId eq "<value>"`.
       security:
@@ -795,6 +939,7 @@ paths:
     post:
       tags: [scim]
       operationId: scimCreateGroup
+      x-authorization: scim_token
       summary: Create a group
       security:
         - scimToken: []
@@ -822,6 +967,7 @@ paths:
     get:
       tags: [scim]
       operationId: scimGetGroup
+      x-authorization: scim_token
       summary: Get a group
       security:
         - scimToken: []
@@ -838,6 +984,7 @@ paths:
     patch:
       tags: [scim]
       operationId: scimPatchGroup
+      x-authorization: scim_token
       summary: Rename a group or add and remove members
       security:
         - scimToken: []
@@ -863,6 +1010,7 @@ paths:
     delete:
       tags: [scim]
       operationId: scimDeleteGroup
+      x-authorization: scim_token
       summary: Delete a group
       security:
         - scimToken: []
@@ -977,7 +1125,7 @@ components:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }
     Forbidden:
-      description: Authenticated but missing the required role.
+      description: Authenticated but missing the required permission (`permission_required`) or role.
       headers:
         Request-Id: { $ref: "#/components/headers/RequestId" }
       content:
@@ -1077,7 +1225,18 @@ components:
         name: { type: string }
         roles:
           type: array
+          description: |
+            Keycloak realm roles in the token. Only `platform-admin` still means anything; tenant access comes from
+            `tenant_roles` (ADR-0014).
           items: { type: string, enum: [platform-admin, tenant-admin] }
+        tenant_roles:
+          type: array
+          description: The caller's roles in their tenant, from their own and their SCIM groups' role bindings.
+          items: { $ref: "#/components/schemas/TenantRoleName" }
+        permissions:
+          type: array
+          description: Everything those roles allow.
+          items: { type: string, examples: [projects:create] }
         login_method:
           type: string
           description: "`password` for Meterbook credentials, `sso` when signed in through the tenant's IdP."
@@ -1106,7 +1265,7 @@ components:
         initial_admin_email:
           type: string
           format: email
-          description: Must be in one of `domains`. Receives the `tenant-admin` role.
+          description: Must be in one of `domains`. Is bound the tenant's `admin` role.
 
     Tenant:
       type: object
@@ -1378,7 +1537,8 @@ components:
           description: |
             What was attempted: `tenant.created`, `sso_connection.created|deleted`, `project.created|updated`,
             `environment.created`, `api_key.created|revoked|rotated`, `scim_token.created|revoked`,
-            `scim_user.created|replaced|updated|deleted`, `scim_group.created|updated|deleted`, or, for refused
+            `scim_user.created|replaced|updated|deleted`, `scim_group.created|updated|deleted`,
+            `role_binding.created|deleted`, or, for refused
             reads only, `<resource>.read`.
           examples: [project.updated]
         outcome:
@@ -1388,7 +1548,10 @@ components:
           type: object
           required: [type, id]
           properties:
-            type: { type: string, enum: [user, scim_token, platform_operator] }
+            type:
+              type: string
+              description: "`system` for changes no person made, such as the one-off backfill of tenant admins."
+              enum: [user, scim_token, platform_operator, system]
             id: { $ref: "#/components/schemas/Id" }
         target:
           type: object
@@ -1415,6 +1578,65 @@ components:
         data:
           type: array
           items: { $ref: "#/components/schemas/AuditEvent" }
+        has_more: { type: boolean }
+        next_cursor: { type: [string, "null"] }
+
+    TenantRoleName:
+      type: string
+      enum: [viewer, auditor, developer, admin]
+
+    Role:
+      type: object
+      required: [name, permissions]
+      properties:
+        name: { $ref: "#/components/schemas/TenantRoleName" }
+        permissions:
+          type: array
+          items: { type: string }
+
+    RoleList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Role" }
+
+    CreateRoleBinding:
+      type: object
+      description: Exactly one of `user_id` and `group_id`.
+      required: [role]
+      additionalProperties: false
+      properties:
+        role: { $ref: "#/components/schemas/TenantRoleName" }
+        user_id:
+          description: A Keycloak user ID (`user_id` of `GET /v1/me`).
+          allOf: [{ $ref: "#/components/schemas/Id" }]
+        group_id:
+          description: A SCIM group's `id`.
+          allOf: [{ $ref: "#/components/schemas/Id" }]
+
+    RoleBinding:
+      type: object
+      required: [id, role, subject, created_at]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        role: { $ref: "#/components/schemas/TenantRoleName" }
+        subject:
+          type: object
+          required: [type, id]
+          properties:
+            type: { type: string, enum: [user, group] }
+            id: { $ref: "#/components/schemas/Id" }
+        created_at: { type: string, format: date-time }
+
+    RoleBindingList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/RoleBinding" }
         has_more: { type: boolean }
         next_cursor: { type: [string, "null"] }
 

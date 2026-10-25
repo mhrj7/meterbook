@@ -34,7 +34,7 @@ jobs:
         shard:
           - {name: scim, targets: "com.meterbook.identity.scim.*"}
           - {name: sso and tenants, targets: "com.meterbook.identity.sso.*,com.meterbook.identity.directory.*,com.meterbook.identity.tenants.*"}
-          - {name: keys and tenancy, targets: "com.meterbook.identity.apikeys.*,com.meterbook.identity.projects.*,com.meterbook.identity.tenancy.*,com.meterbook.identity.idempotency.*"}
+          - {name: keys and tenancy, targets: "com.meterbook.identity.apikeys.*,com.meterbook.identity.authz.*,com.meterbook.identity.projects.*,com.meterbook.identity.tenancy.*,com.meterbook.identity.idempotency.*"}
           - {name: web and security, targets: "com.meterbook.identity.web.*,com.meterbook.identity.security.*,com.meterbook.identity.me.*,com.meterbook.identity.audit.*,com.meterbook.identity.IdentityApplication,com.meterbook.identity.AppConfig"}
     defaults:
       run:

@@ -125,15 +125,11 @@ class KeycloakDirectoryFailureTest {
         "GET /admin/realms/meterbook/organizations/members/" + user + "/organizations",
         Reply.of(200, ""));
     replies.put(
-        "GET /admin/realms/meterbook/users/" + user + "/role-mappings/realm/available",
-        Reply.of(200, "[]"));
+        "GET /admin/realms/meterbook/users/" + user + "/role-mappings/realm", Reply.of(200, ""));
 
     assertThat(directory.findUserByEmail("a@b.test")).isEmpty();
     assertThat(directory.organizationsOf(user)).isEmpty();
-    directory.grantRealmRole(
-        user, "tenant-admin"); // nothing available: already granted, no mapping call
-    assertThat(hits("POST /admin/realms/meterbook/users/" + user + "/role-mappings/realm"))
-        .isZero();
+    assertThat(directory.realmRolesOf(user)).isEmpty();
   }
 
   @Test
