@@ -2,7 +2,11 @@ package com.meterbook.identity.security;
 
 import java.util.Optional;
 
-/** The roles MB-T07 knows (realm roles in Keycloak). Finer-grained RBAC arrives with MB-T11. */
+/**
+ * Keycloak realm roles in the access token. Only {@code platform-admin} authorizes anything; tenant
+ * roles are role bindings (ADR-0014), and {@code tenant-admin} is read once, by the backfill of
+ * tenants created before them.
+ */
 public enum Role {
   PLATFORM_ADMIN("platform-admin"),
   TENANT_ADMIN("tenant-admin");

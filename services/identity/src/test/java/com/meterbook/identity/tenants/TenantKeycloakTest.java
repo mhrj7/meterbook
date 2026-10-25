@@ -80,7 +80,7 @@ class TenantKeycloakTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.tenant_id").value(tenant))
         .andExpect(jsonPath("$.email").value("bill@initech.test"))
-        .andExpect(jsonPath("$.roles[0]").value("tenant-admin"));
+        .andExpect(jsonPath("$.tenant_roles[0]").value("admin"));
     mvc.perform(get("/v1/tenants/" + tenant).header("Authorization", "Bearer " + token))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.domains[0]").value("initech.test"));

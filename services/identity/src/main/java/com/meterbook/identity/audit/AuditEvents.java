@@ -5,7 +5,6 @@ import static com.meterbook.identity.db.Tables.AUDIT_EVENTS;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.meterbook.identity.db.tables.records.AuditEventsRecord;
 import com.meterbook.identity.security.Caller;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.ApiException;
 import com.meterbook.identity.web.Pages;
@@ -92,7 +91,7 @@ public class AuditEvents {
 
   public Pages.Page<Event> list(
       Caller caller, Filter filter, Optional<String> startingAfter, int limit) {
-    UUID tenant = adminTenant(caller);
+    UUID tenant = tenantOf(caller);
     Condition where = AUDIT_EVENTS.TENANT_ID.eq(tenant);
     if (filter.action().isPresent()) {
       where = where.and(AUDIT_EVENTS.ACTION.eq(filter.action().get()));
@@ -132,16 +131,12 @@ public class AuditEvents {
         json.readValue(r.getDetails().data(), DETAILS));
   }
 
-  private static UUID adminTenant(Caller caller) {
+  private static UUID tenantOf(Caller caller) {
     UUID tenant =
         caller
             .tenantId()
             .orElseThrow(
                 () -> ApiException.forbidden("tenant_required", "audit events belong to a tenant"));
-    if (!caller.has(Role.TENANT_ADMIN)) {
-      throw ApiException.forbidden(
-          "tenant_admin_required", "only tenant administrators read the audit log");
-    }
     return tenant;
   }
 }

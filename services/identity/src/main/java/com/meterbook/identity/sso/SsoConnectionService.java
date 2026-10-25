@@ -5,7 +5,6 @@ import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.scim.ScimUsers;
 import com.meterbook.identity.security.Caller;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.ApiException;
 import com.meterbook.identity.web.Pages;
@@ -69,7 +68,7 @@ public class SsoConnectionService {
   }
 
   public Connection create(Caller caller, NewSamlConnection request) {
-    UUID tenant = tenantAdminTenant(caller);
+    UUID tenant = tenantOf(caller);
     String certificate = SigningCertificate.normalise(request.signingCertificate(), clock);
     requireAllowedUrl(request.ssoUrl());
     if (scope.inTenant(tenant, () -> connections.existsFor(tenant))) {
@@ -120,7 +119,7 @@ public class SsoConnectionService {
   }
 
   public Connection get(Caller caller, UUID id) {
-    UUID tenant = tenantAdminTenant(caller);
+    UUID tenant = tenantOf(caller);
     return scope
         .inTenant(tenant, () -> connections.find(tenant, id))
         .map(c -> new Connection(c, serviceProvider(c.keycloakAlias(), c.id())))
@@ -129,7 +128,7 @@ public class SsoConnectionService {
   }
 
   public Pages.Page<Connection> list(Caller caller, Optional<UUID> startingAfter, int limit) {
-    UUID tenant = tenantAdminTenant(caller);
+    UUID tenant = tenantOf(caller);
     List<Connection> rows =
         scope.inTenant(tenant, () -> connections.list(tenant, startingAfter, limit + 1)).stream()
             .map(c -> new Connection(c, serviceProvider(c.keycloakAlias(), c.id())))
@@ -138,7 +137,7 @@ public class SsoConnectionService {
   }
 
   public void delete(Caller caller, UUID id) {
-    UUID tenant = tenantAdminTenant(caller);
+    UUID tenant = tenantOf(caller);
     SsoConnectionRepository.SsoConnection connection =
         scope
             .inTenant(tenant, () -> connections.find(tenant, id))
@@ -173,11 +172,7 @@ public class SsoConnectionService {
     }
   }
 
-  private static UUID tenantAdminTenant(Caller caller) {
-    if (!caller.has(Role.TENANT_ADMIN)) {
-      throw ApiException.forbidden(
-          "tenant_admin_required", "only tenant administrators manage SSO connections");
-    }
+  private static UUID tenantOf(Caller caller) {
     return caller
         .tenantId()
         .orElseThrow(

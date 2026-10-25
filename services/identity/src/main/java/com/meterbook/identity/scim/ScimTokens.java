@@ -5,7 +5,6 @@ import static com.meterbook.identity.db.Tables.SCIM_TOKENS;
 import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.security.Caller;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.tenancy.TenantScope;
 import com.meterbook.identity.web.ApiException;
 import com.meterbook.identity.web.Pages;
@@ -67,7 +66,7 @@ public class ScimTokens {
   }
 
   public Issued issue(Caller caller, String description) {
-    UUID tenant = tenantAdminTenant(caller);
+    UUID tenant = tenantOf(caller);
     String secret = PREFIX + randomSecret();
     Token token =
         new Token(
@@ -93,7 +92,7 @@ public class ScimTokens {
   }
 
   public Pages.Page<Token> list(Caller caller, Optional<UUID> startingAfter, int limit) {
-    UUID tenant = tenantAdminTenant(caller);
+    UUID tenant = tenantOf(caller);
     var condition = SCIM_TOKENS.TENANT_ID.eq(tenant).and(SCIM_TOKENS.REVOKED_AT.isNull());
     if (startingAfter.isPresent()) {
       condition = condition.and(SCIM_TOKENS.ID.gt(startingAfter.get()));
@@ -119,7 +118,7 @@ public class ScimTokens {
   }
 
   public void revoke(Caller caller, UUID id) {
-    UUID tenant = tenantAdminTenant(caller);
+    UUID tenant = tenantOf(caller);
     scope.inTenant(
         tenant,
         () -> {
@@ -188,11 +187,7 @@ public class ScimTokens {
     }
   }
 
-  private static UUID tenantAdminTenant(Caller caller) {
-    if (!caller.has(Role.TENANT_ADMIN)) {
-      throw ApiException.forbidden(
-          "tenant_admin_required", "only tenant administrators manage SCIM tokens");
-    }
+  private static UUID tenantOf(Caller caller) {
     return caller
         .tenantId()
         .orElseThrow(

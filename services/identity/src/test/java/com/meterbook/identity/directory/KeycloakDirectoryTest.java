@@ -88,12 +88,10 @@ class KeycloakDirectoryTest {
     directory.addMember(organization, user); // already a member: no error
     assertThat(directory.organizationsOf(user)).containsExactly(organization);
 
-    directory.grantRealmRole(user, "tenant-admin");
-    directory.grantRealmRole(user, "tenant-admin"); // already granted: no error
-    assertThat(admin.realmRolesOf(user)).contains("tenant-admin");
-    assertThatThrownBy(() -> directory.grantRealmRole(user, "platform-admin"))
-        .isInstanceOf(IllegalArgumentException.class);
-    assertThat(admin.realmRolesOf(user)).doesNotContain("platform-admin");
+    assertThat(directory.membersOf(organization)).containsExactly(user);
+    assertThat(directory.realmRolesOf(user)).doesNotContain("tenant-admin");
+    admin.grantRealmRole(user, "tenant-admin");
+    assertThat(directory.realmRolesOf(user)).contains("tenant-admin");
 
     directory.deleteUser(user);
     directory.deleteUser(user);

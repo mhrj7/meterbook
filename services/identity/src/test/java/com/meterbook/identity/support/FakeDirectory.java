@@ -125,9 +125,18 @@ public final class FakeDirectory implements Directory {
   }
 
   @Override
-  public void grantRealmRole(UUID user, String role) {
-    enter("grantRealmRole");
-    roles.computeIfAbsent(user, u -> new HashSet<>()).add(role);
+  public List<UUID> membersOf(UUID organization) {
+    enter("membersOf");
+    return members.entrySet().stream()
+        .filter(e -> e.getValue().contains(organization))
+        .map(Map.Entry::getKey)
+        .toList();
+  }
+
+  @Override
+  public Set<String> realmRolesOf(UUID user) {
+    enter("realmRolesOf");
+    return Set.copyOf(roles.getOrDefault(user, Set.of()));
   }
 
   @Override

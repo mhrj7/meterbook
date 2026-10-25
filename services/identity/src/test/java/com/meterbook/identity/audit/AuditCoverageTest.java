@@ -10,14 +10,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 
+import com.meterbook.identity.authz.TenantRole;
 import com.meterbook.identity.db.Tables;
 import com.meterbook.identity.db.tables.records.AuditEventsRecord;
 import com.meterbook.identity.scim.ScimTokens;
 import com.meterbook.identity.security.CallerAuthentication;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
 import com.meterbook.identity.sso.SigningCertificateTest;
 import com.meterbook.identity.support.FakeDirectory;
+import com.meterbook.identity.support.TenantMembers;
 import com.meterbook.identity.support.TestDatabase;
 import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
@@ -95,7 +96,7 @@ class AuditCoverageTest {
                 .set(Tables.TENANT_DOMAINS.DOMAIN, domain)
                 .set(Tables.TENANT_DOMAINS.TENANT_ID, tenant)
                 .execute());
-    admin = TestCallers.tenantUser(UUID.randomUUID(), tenant, Role.TENANT_ADMIN);
+    admin = TenantMembers.with(db, scope, tenant, TenantRole.ADMIN);
     var issued = TestCallers.as(admin, () -> tokens.issue(admin.caller(), "audit test"));
     scimToken = issued.secret();
     scimTokenId = issued.token().id();
@@ -143,7 +144,9 @@ class AuditCoverageTest {
         arguments(AuditAction.SCIM_USER_DELETED, (Change) AuditCoverageTest::deleteUser),
         arguments(AuditAction.SCIM_GROUP_CREATED, (Change) AuditCoverageTest::createGroup),
         arguments(AuditAction.SCIM_GROUP_UPDATED, (Change) AuditCoverageTest::patchGroup),
-        arguments(AuditAction.SCIM_GROUP_DELETED, (Change) AuditCoverageTest::deleteGroup));
+        arguments(AuditAction.SCIM_GROUP_DELETED, (Change) AuditCoverageTest::deleteGroup),
+        arguments(AuditAction.ROLE_BINDING_CREATED, (Change) AuditCoverageTest::createBinding),
+        arguments(AuditAction.ROLE_BINDING_DELETED, (Change) AuditCoverageTest::deleteBinding));
   }
 
   @Test
@@ -164,8 +167,15 @@ class AuditCoverageTest {
     assertThat(status).as("the call itself succeeds").isBetween(200, 299);
 
     List<AuditEventsRecord> events = eventsOf(expected.tenant(), expected.result());
-    assertThat(events).hasSize(1);
-    AuditEventsRecord event = events.getFirst();
+    // Creating a tenant also binds its first admin; nothing else records two events.
+    assertThat(events.stream().map(AuditEventsRecord::getAction))
+        .containsExactlyInAnyOrderElementsOf(
+            action == AuditAction.TENANT_CREATED
+                ? List.of(action.code(), AuditAction.ROLE_BINDING_CREATED.code())
+                : List.of(action.code()));
+    assertThat(events).allMatch(e -> e.getOutcome().equals("success"));
+    AuditEventsRecord event =
+        events.stream().filter(e -> e.getAction().equals(action.code())).findFirst().orElseThrow();
     assertThat(event.getAction()).isEqualTo(action.code());
     assertThat(event.getOutcome()).isEqualTo("success");
     assertThat(event.getTargetType()).isEqualTo(action.targetType());
@@ -215,8 +225,7 @@ class AuditCoverageTest {
   void a_cross_tenant_attempt_is_recorded_in_the_callers_log_only() throws Exception {
     UUID project = id(createProject().result());
     UUID other = newTenant();
-    CallerAuthentication intruder =
-        TestCallers.tenantUser(UUID.randomUUID(), other, Role.TENANT_ADMIN);
+    CallerAuthentication intruder = TenantMembers.with(db, scope, other, TenantRole.ADMIN);
 
     MvcResult read =
         mvc.perform(get("/v1/projects/" + project).with(authentication(intruder))).andReturn();
@@ -259,9 +268,7 @@ class AuditCoverageTest {
                 admin,
                 () ->
                     tokens.issue(
-                        TestCallers.tenantUser(UUID.randomUUID(), other, Role.TENANT_ADMIN)
-                            .caller(),
-                        "other"))
+                        TenantMembers.with(db, scope, other, TenantRole.ADMIN).caller(), "other"))
             .secret();
 
     MvcResult result =
@@ -461,6 +468,21 @@ class AuditCoverageTest {
   Expected deleteGroup() throws Exception {
     UUID group = id(createGroup().result());
     return byScim(call(scim(delete("/scim/v2/Groups/" + group)), null), group);
+  }
+
+  Expected createBinding() throws Exception {
+    UUID group = id(createGroup().result());
+    MvcResult result =
+        call(
+            asAdmin(post("/v1/role-bindings"))
+                .header("Idempotency-Key", UUID.randomUUID().toString()),
+            "{\"role\":\"developer\",\"group_id\":\"" + group + "\"}");
+    return byAdmin(result, id(result));
+  }
+
+  Expected deleteBinding() throws Exception {
+    UUID binding = id(createBinding().result());
+    return byAdmin(call(asAdmin(delete("/v1/role-bindings/" + binding)), null), binding);
   }
 
   // Helpers.

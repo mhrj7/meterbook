@@ -2,6 +2,8 @@ package com.meterbook.identity.sso;
 
 import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.Audited;
+import com.meterbook.identity.authz.Permission;
+import com.meterbook.identity.authz.Requires;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
@@ -86,6 +88,7 @@ public class SsoConnectionController {
   }
 
   @PostMapping("/v1/sso-connections")
+  @Requires(Permission.SSO_CONNECTIONS_CREATE)
   @Audited(value = AuditAction.SSO_CONNECTION_CREATED, targetVariable = "")
   public ResponseEntity<?> create(
       CallerAuthentication auth,
@@ -111,6 +114,7 @@ public class SsoConnectionController {
   }
 
   @GetMapping("/v1/sso-connections")
+  @Requires(Permission.SSO_CONNECTIONS_READ)
   public SsoConnectionList list(
       CallerAuthentication auth,
       @RequestParam(name = "limit", defaultValue = "50") int limit,
@@ -131,12 +135,14 @@ public class SsoConnectionController {
   }
 
   @GetMapping("/v1/sso-connections/{id}")
+  @Requires(Permission.SSO_CONNECTIONS_READ)
   @Audited(AuditAction.SSO_CONNECTION_READ)
   public SsoConnection get(CallerAuthentication auth, @PathVariable UUID id) {
     return SsoConnection.of(connections.get(auth.caller(), id));
   }
 
   @DeleteMapping("/v1/sso-connections/{id}")
+  @Requires(Permission.SSO_CONNECTIONS_DELETE)
   @Audited(AuditAction.SSO_CONNECTION_DELETED)
   public ResponseEntity<Void> delete(CallerAuthentication auth, @PathVariable UUID id) {
     connections.delete(auth.caller(), id);

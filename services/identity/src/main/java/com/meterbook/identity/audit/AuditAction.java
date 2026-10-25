@@ -30,6 +30,8 @@ public enum AuditAction {
   SCIM_GROUP_UPDATED("scim_group.updated", "scim_group"),
   SCIM_GROUP_DELETED("scim_group.deleted", "scim_group"),
   SCIM_GROUP_READ("scim_group.read", "scim_group"),
+  ROLE_BINDING_CREATED("role_binding.created", "role_binding"),
+  ROLE_BINDING_DELETED("role_binding.deleted", "role_binding"),
   AUDIT_EVENTS_READ("audit_events.read", "audit_events");
 
   private final String code;

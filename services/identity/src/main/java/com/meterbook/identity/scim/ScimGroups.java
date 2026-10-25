@@ -29,8 +29,8 @@ import tools.jackson.databind.node.JsonNodeFactory;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
- * SCIM groups (RFC 7643 §4.2). Stored for now; mapping groups to roles is MB-T11. Members must be
- * SCIM users of the same tenant.
+ * SCIM groups (RFC 7643 §4.2); role bindings to a group grant its members that role (ADR-0014).
+ * Members must be SCIM users of the same tenant.
  */
 @Service
 public class ScimGroups {

@@ -67,6 +67,9 @@ public class AuditLog {
 
   static final String NO_REQUEST = "none";
 
+  /** The operator ID of changes the platform made on its own, such as a one-off backfill. */
+  public static final UUID PLATFORM = new UUID(0, 0);
+
   private final DSLContext db;
   private final JsonMapper json;
   private final Clock clock;
@@ -94,22 +97,49 @@ public class AuditLog {
       throw new IllegalStateException(
           "an audit event must be written in the transaction of its change");
     }
-    insert(tenant, action.code(), Outcome.SUCCESS, action.targetType(), target, details);
+    insert(
+        tenant,
+        Actor.current(),
+        action.code(),
+        Outcome.SUCCESS,
+        action.targetType(),
+        target,
+        details);
+  }
+
+  /**
+   * Records a change the service made on its own, with no request behind it (a backfill), as the
+   * platform operator {@link #PLATFORM}.
+   */
+  public void recordAsPlatform(
+      UUID tenant, AuditAction action, UUID target, Map<String, String> details) {
+    if (!TransactionSynchronizationManager.isActualTransactionActive()) {
+      throw new IllegalStateException(
+          "an audit event must be written in the transaction of its change");
+    }
+    insert(
+        tenant,
+        new Actor("platform_operator", PLATFORM),
+        action.code(),
+        Outcome.SUCCESS,
+        action.targetType(),
+        target,
+        details);
   }
 
   /** Records a refused attempt; {@link AuditInterceptor} calls it in a transaction of its own. */
   void refused(UUID tenant, AuditAction action, Outcome outcome, String targetType, UUID target) {
-    insert(tenant, action.code(), outcome, targetType, target, Map.of());
+    insert(tenant, Actor.current(), action.code(), outcome, targetType, target, Map.of());
   }
 
   private void insert(
       UUID tenant,
+      Actor actor,
       String action,
       Outcome outcome,
       String targetType,
       UUID target,
       Map<String, String> details) {
-    Actor actor = Actor.current();
     String requestId = MDC.get(RequestIdFilter.MDC_KEY);
     db.insertInto(AUDIT_EVENTS)
         .set(AUDIT_EVENTS.ID, UUID.randomUUID())

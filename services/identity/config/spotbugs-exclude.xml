@@ -15,6 +15,7 @@
       <Field type="com.meterbook.identity.apikeys.ApiKeys"/>
       <Field type="com.meterbook.identity.audit.AuditEvents"/>
       <Field type="com.meterbook.identity.audit.AuditLog"/>
+      <Field type="com.meterbook.identity.authz.RoleBindings"/>
       <Field type="com.meterbook.identity.directory.Directory"/>
       <Field type="com.meterbook.identity.idempotency.Idempotency"/>
       <Field type="com.meterbook.identity.idempotency.IdempotencyStore"/>

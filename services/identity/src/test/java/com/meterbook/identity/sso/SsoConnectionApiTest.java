@@ -9,12 +9,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.meterbook.identity.authz.TenantRole;
 import com.meterbook.identity.db.Tables;
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.security.CallerAuthentication;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
 import com.meterbook.identity.support.FakeDirectory;
+import com.meterbook.identity.support.TenantMembers;
 import com.meterbook.identity.support.TestDatabase;
 import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
@@ -65,7 +66,7 @@ class SsoConnectionApiTest {
   void tenant() {
     directory.reset();
     tenant = newTenant();
-    admin = TestCallers.tenantUser(UUID.randomUUID(), tenant, Role.TENANT_ADMIN);
+    admin = TenantMembers.with(db, scope, tenant, TenantRole.ADMIN);
   }
 
   private UUID newTenant() {
@@ -155,8 +156,7 @@ class SsoConnectionApiTest {
   @Test
   void connections_are_invisible_to_other_tenants() throws Exception {
     UUID id = createValid();
-    CallerAuthentication otherAdmin =
-        TestCallers.tenantUser(UUID.randomUUID(), newTenant(), Role.TENANT_ADMIN);
+    CallerAuthentication otherAdmin = TenantMembers.with(db, scope, newTenant(), TenantRole.ADMIN);
 
     mvc.perform(get("/v1/sso-connections/" + id).with(authentication(otherAdmin)))
         .andExpect(status().isNotFound());
@@ -175,7 +175,7 @@ class SsoConnectionApiTest {
     CallerAuthentication member = TestCallers.tenantUser(UUID.randomUUID(), tenant);
     create(member, "k", validBody())
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.error.code").value("tenant_admin_required"));
+        .andExpect(jsonPath("$.error.code").value("permission_required"));
     mvc.perform(get("/v1/sso-connections").with(authentication(member)))
         .andExpect(status().isForbidden());
     create(TestCallers.platformAdmin(UUID.randomUUID()), "k2", validBody())

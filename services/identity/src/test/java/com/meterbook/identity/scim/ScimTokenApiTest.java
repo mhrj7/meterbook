@@ -10,11 +10,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.meterbook.identity.authz.TenantRole;
 import com.meterbook.identity.db.Tables;
 import com.meterbook.identity.security.CallerAuthentication;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
 import com.meterbook.identity.support.MutableClock;
+import com.meterbook.identity.support.TenantMembers;
 import com.meterbook.identity.support.TestDatabase;
 import com.meterbook.identity.tenancy.TenantScope;
 import java.time.Duration;
@@ -62,7 +63,7 @@ class ScimTokenApiTest {
   @BeforeEach
   void tenant() {
     tenant = newTenant();
-    admin = TestCallers.tenantUser(UUID.randomUUID(), tenant, Role.TENANT_ADMIN);
+    admin = TenantMembers.with(db, scope, tenant, TenantRole.ADMIN);
   }
 
   private UUID newTenant() {
@@ -174,8 +175,7 @@ class ScimTokenApiTest {
   @Test
   void tokens_are_invisible_to_other_tenants_and_members() throws Exception {
     String id = issued().get("id").asString();
-    CallerAuthentication otherAdmin =
-        TestCallers.tenantUser(UUID.randomUUID(), newTenant(), Role.TENANT_ADMIN);
+    CallerAuthentication otherAdmin = TenantMembers.with(db, scope, newTenant(), TenantRole.ADMIN);
 
     mvc.perform(delete("/v1/scim-tokens/" + id).with(authentication(otherAdmin)))
         .andExpect(status().isNotFound());

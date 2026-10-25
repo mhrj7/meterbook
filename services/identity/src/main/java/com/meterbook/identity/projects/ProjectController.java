@@ -2,6 +2,8 @@ package com.meterbook.identity.projects;
 
 import com.meterbook.identity.audit.AuditAction;
 import com.meterbook.identity.audit.Audited;
+import com.meterbook.identity.authz.Permission;
+import com.meterbook.identity.authz.Requires;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
@@ -68,6 +70,7 @@ public class ProjectController {
   }
 
   @PostMapping("/v1/projects")
+  @Requires(Permission.PROJECTS_CREATE)
   @Audited(value = AuditAction.PROJECT_CREATED, targetVariable = "")
   public ResponseEntity<?> create(
       CallerAuthentication auth,
@@ -85,6 +88,7 @@ public class ProjectController {
   }
 
   @GetMapping("/v1/projects")
+  @Requires(Permission.PROJECTS_READ)
   public ProjectList list(
       CallerAuthentication auth,
       @RequestParam(name = "limit", defaultValue = "50") int limit,
@@ -95,12 +99,14 @@ public class ProjectController {
   }
 
   @GetMapping("/v1/projects/{id}")
+  @Requires(Permission.PROJECTS_READ)
   @Audited(AuditAction.PROJECT_READ)
   public Projects.Project get(CallerAuthentication auth, @PathVariable UUID id) {
     return projects.get(auth.caller(), id);
   }
 
   @PatchMapping("/v1/projects/{id}")
+  @Requires(Permission.PROJECTS_UPDATE)
   @Audited(AuditAction.PROJECT_UPDATED)
   public Projects.Project rename(
       CallerAuthentication auth, @PathVariable UUID id, @Valid @RequestBody UpdateProject body) {
@@ -108,6 +114,7 @@ public class ProjectController {
   }
 
   @PostMapping("/v1/projects/{id}/environments")
+  @Requires(Permission.ENVIRONMENTS_CREATE)
   @Audited(value = AuditAction.ENVIRONMENT_CREATED, targetVariable = "id", targetType = "project")
   public ResponseEntity<?> createEnvironment(
       CallerAuthentication auth,
@@ -129,6 +136,7 @@ public class ProjectController {
   }
 
   @GetMapping("/v1/projects/{id}/environments")
+  @Requires(Permission.ENVIRONMENTS_READ)
   @Audited(value = AuditAction.ENVIRONMENT_READ, targetVariable = "id", targetType = "project")
   public EnvironmentList listEnvironments(
       CallerAuthentication auth,
@@ -141,6 +149,7 @@ public class ProjectController {
   }
 
   @GetMapping("/v1/projects/{id}/environments/{environmentId}")
+  @Requires(Permission.ENVIRONMENTS_READ)
   @Audited(value = AuditAction.ENVIRONMENT_READ, targetVariable = "environmentId")
   public Projects.Environment getEnvironment(
       CallerAuthentication auth, @PathVariable UUID id, @PathVariable UUID environmentId) {

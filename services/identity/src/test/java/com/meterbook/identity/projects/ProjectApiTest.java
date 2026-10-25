@@ -9,10 +9,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.meterbook.identity.authz.TenantRole;
 import com.meterbook.identity.db.Tables;
 import com.meterbook.identity.security.CallerAuthentication;
-import com.meterbook.identity.security.Role;
 import com.meterbook.identity.security.TestCallers;
+import com.meterbook.identity.support.TenantMembers;
 import com.meterbook.identity.support.TestDatabase;
 import com.meterbook.identity.tenancy.TenantScope;
 import java.time.OffsetDateTime;
@@ -46,8 +47,8 @@ class ProjectApiTest {
   @BeforeEach
   void tenant() {
     tenant = newTenant();
-    admin = TestCallers.tenantUser(UUID.randomUUID(), tenant, Role.TENANT_ADMIN);
-    member = TestCallers.tenantUser(UUID.randomUUID(), tenant);
+    admin = TenantMembers.with(db, scope, tenant, TenantRole.ADMIN);
+    member = TenantMembers.with(db, scope, tenant, TenantRole.VIEWER);
   }
 
   private UUID newTenant() {
@@ -125,7 +126,7 @@ class ProjectApiTest {
         .andExpect(jsonPath("$.error.code").value("project_slug_taken"));
 
     // Another tenant may use the same slug.
-    var globex = TestCallers.tenantUser(UUID.randomUUID(), newTenant(), Role.TENANT_ADMIN);
+    var globex = TenantMembers.with(db, scope, newTenant(), TenantRole.ADMIN);
     create(globex, "globex", "billing").andExpect(status().isCreated());
   }
 
@@ -140,7 +141,7 @@ class ProjectApiTest {
         .andExpect(jsonPath("$.data[0].id").value(id));
     create(member, "member", "nope")
         .andExpect(status().isForbidden())
-        .andExpect(jsonPath("$.error.code").value("tenant_admin_required"));
+        .andExpect(jsonPath("$.error.code").value("permission_required"));
     addEnvironment(member, id, "qa", "test").andExpect(status().isForbidden());
     mvc.perform(
             patch("/v1/projects/" + id)
@@ -291,7 +292,7 @@ class ProjectApiTest {
             .get(0)
             .get("id")
             .asString();
-    var intruder = TestCallers.tenantUser(UUID.randomUUID(), newTenant(), Role.TENANT_ADMIN);
+    var intruder = TenantMembers.with(db, scope, newTenant(), TenantRole.ADMIN);
 
     mvc.perform(get("/v1/projects").with(authentication(intruder)))
         .andExpect(jsonPath("$.data").isEmpty());
