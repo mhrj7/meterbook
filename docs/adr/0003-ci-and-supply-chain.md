@@ -48,7 +48,8 @@ We will use **Option A** with these rules:
   `ignore-unfixed` means a CRITICAL with no available fix is reported but does not block (otherwise an upstream
   issue could freeze all releases).
 - **Follow-up work:** MB-T06 (admission policy verifying signatures; done in ADR-0012), branch protection on `main`
-  requiring `ci`.
+  requiring `ci` (done 2026-10-25: pull requests only, required checks `ci` and the three CodeQL analyses, enforced
+  for administrators, no force-pushes or deletions).
 
 ## How we will know it was wrong
 
