@@ -168,3 +168,17 @@ PASS  without a tenant scope an insert is refused by row-level security
 PASS  in the tenant's own scope the tenant is visible
 123 passed, 0 failed
 ```
+
+## Review after the first pass (#56)
+
+| Found by | Problem | Fix |
+|---|---|---|
+| Reading CodeQL's SARIF | The CodeQL gate looked for rule severities in `tool.driver`, but CodeQL keeps them with the query packs (`tool.extensions`): every result scored 0, so the gate could not fail while **main had 5 open high alerts**. TC-PLT-005 was recorded as passing too early | The gate reads both and fails when it has nothing to judge; run on main's old SARIF it fails with exactly those 5 |
+| Those alerts | `java/user-controlled-bypass` (2): the API key and SCIM filters branched on the Authorization header before the database check | `BearerTokens` only extracts; authentication comes only from the lookup |
+| Same | `java/spring-disabled-csrf-protection` (3): every chain is stateless with header-only credentials, so CSRF protection protects nothing | Query excluded in `.github/codeql/codeql-config.yml` with that reason; `NoAmbientCredentialsTest` fails if a chain creates a session, sets a cookie or accepts a cookie as a credential |
+| Review | Dev's single policy-controller replica had the chart's PDB, which blocks drains | No PDB in dev; prod runs two with it. (Node-group deletion took the same time with it, 8m16s against 8m18s, so it did not cause the ENI leak) |
+| Review | Dependabot had no `docker` ecosystem: no base image, including the re-published podinfo, would ever get an update PR | Added for every service |
+| Review | Coverage was quoted from a local build | CI now prints it: 97.4% line, 86.8% branch ([run 40143043993](https://github.com/mhrj7/meterbook/actions/runs/40143043993)) |
+| Testing the re-sign job | Never run | Re-signing our smoke digest succeeded ([40143752957](https://github.com/mhrj7/meterbook/actions/runs/40143752957)); a digest we did not build was refused ([40143794642](https://github.com/mhrj7/meterbook/actions/runs/40143794642)) |
+
+After #56, code scanning shows **0 open alerts** on main ([CodeQL 40143497435](https://github.com/mhrj7/meterbook/actions/runs/40143497435)).
