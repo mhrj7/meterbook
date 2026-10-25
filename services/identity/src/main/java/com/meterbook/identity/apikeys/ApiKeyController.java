@@ -1,5 +1,7 @@
 package com.meterbook.identity.apikeys;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.Audited;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
@@ -147,6 +149,10 @@ public class ApiKeyController {
   }
 
   @PostMapping(KEYS)
+  @Audited(
+      value = AuditAction.API_KEY_CREATED,
+      targetVariable = "environmentId",
+      targetType = "environment")
   public ResponseEntity<?> create(
       CallerAuthentication auth,
       @PathVariable UUID projectId,
@@ -174,6 +180,10 @@ public class ApiKeyController {
   }
 
   @GetMapping(KEYS)
+  @Audited(
+      value = AuditAction.API_KEY_READ,
+      targetVariable = "environmentId",
+      targetType = "environment")
   public ApiKeyList list(
       CallerAuthentication auth,
       @PathVariable UUID projectId,
@@ -196,6 +206,7 @@ public class ApiKeyController {
   }
 
   @GetMapping(KEYS + "/{id}")
+  @Audited(AuditAction.API_KEY_READ)
   public ApiKey get(
       CallerAuthentication auth,
       @PathVariable UUID projectId,
@@ -205,6 +216,7 @@ public class ApiKeyController {
   }
 
   @DeleteMapping(KEYS + "/{id}")
+  @Audited(AuditAction.API_KEY_REVOKED)
   public ResponseEntity<Void> revoke(
       CallerAuthentication auth,
       @PathVariable UUID projectId,
@@ -215,6 +227,7 @@ public class ApiKeyController {
   }
 
   @PostMapping(KEYS + "/{id}/rotate")
+  @Audited(AuditAction.API_KEY_ROTATED)
   public ResponseEntity<?> rotate(
       CallerAuthentication auth,
       @PathVariable UUID projectId,

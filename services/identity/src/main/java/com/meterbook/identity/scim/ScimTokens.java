@@ -2,6 +2,8 @@ package com.meterbook.identity.scim;
 
 import static com.meterbook.identity.db.Tables.SCIM_TOKENS;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
 import com.meterbook.identity.tenancy.TenantScope;
@@ -53,12 +55,14 @@ public class ScimTokens {
 
   private final DSLContext db;
   private final TenantScope scope;
+  private final AuditLog audit;
   private final Clock clock;
   private final SecureRandom random = new SecureRandom();
 
-  public ScimTokens(DSLContext db, TenantScope scope, Clock clock) {
+  public ScimTokens(DSLContext db, TenantScope scope, AuditLog audit, Clock clock) {
     this.db = db;
     this.scope = scope;
+    this.audit = audit;
     this.clock = clock;
   }
 
@@ -74,15 +78,17 @@ public class ScimTokens {
             null);
     scope.inTenant(
         tenant,
-        () ->
-            db.insertInto(SCIM_TOKENS)
-                .set(SCIM_TOKENS.ID, token.id())
-                .set(SCIM_TOKENS.TENANT_ID, tenant)
-                .set(SCIM_TOKENS.DESCRIPTION, description)
-                .set(SCIM_TOKENS.PREFIX, token.prefix())
-                .set(SCIM_TOKENS.TOKEN_HASH, hash(secret))
-                .set(SCIM_TOKENS.CREATED_AT, token.createdAt())
-                .execute());
+        () -> {
+          db.insertInto(SCIM_TOKENS)
+              .set(SCIM_TOKENS.ID, token.id())
+              .set(SCIM_TOKENS.TENANT_ID, tenant)
+              .set(SCIM_TOKENS.DESCRIPTION, description)
+              .set(SCIM_TOKENS.PREFIX, token.prefix())
+              .set(SCIM_TOKENS.TOKEN_HASH, hash(secret))
+              .set(SCIM_TOKENS.CREATED_AT, token.createdAt())
+              .execute();
+          audit.record(tenant, AuditAction.SCIM_TOKEN_CREATED, token.id());
+        });
     return new Issued(token, secret);
   }
 
@@ -114,19 +120,21 @@ public class ScimTokens {
 
   public void revoke(Caller caller, UUID id) {
     UUID tenant = tenantAdminTenant(caller);
-    int revoked =
-        scope.inTenant(
-            tenant,
-            () ->
-                db.update(SCIM_TOKENS)
-                    .set(SCIM_TOKENS.REVOKED_AT, OffsetDateTime.now(clock))
-                    .where(SCIM_TOKENS.TENANT_ID.eq(tenant))
-                    .and(SCIM_TOKENS.ID.eq(id))
-                    .and(SCIM_TOKENS.REVOKED_AT.isNull())
-                    .execute());
-    if (revoked == 0) {
-      throw ApiException.notFound("scim_token_not_found", "no such SCIM token");
-    }
+    scope.inTenant(
+        tenant,
+        () -> {
+          int revoked =
+              db.update(SCIM_TOKENS)
+                  .set(SCIM_TOKENS.REVOKED_AT, OffsetDateTime.now(clock))
+                  .where(SCIM_TOKENS.TENANT_ID.eq(tenant))
+                  .and(SCIM_TOKENS.ID.eq(id))
+                  .and(SCIM_TOKENS.REVOKED_AT.isNull())
+                  .execute();
+          if (revoked == 0) {
+            throw ApiException.notFound("scim_token_not_found", "no such SCIM token");
+          }
+          audit.record(tenant, AuditAction.SCIM_TOKEN_REVOKED, id);
+        });
   }
 
   /** The tenant behind a presented secret, if it is a live token. Checked on every request. */

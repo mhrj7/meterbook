@@ -30,12 +30,12 @@ jobs:
       fail-fast: false
       matrix:
         service: [identity]
-        # Roughly equal mutant counts; together they cover every package of the service.
+        # Roughly equal mutant counts; together they cover every package of the service (MutationShardsTest checks).
         shard:
           - {name: scim, targets: "com.meterbook.identity.scim.*"}
           - {name: sso and tenants, targets: "com.meterbook.identity.sso.*,com.meterbook.identity.directory.*,com.meterbook.identity.tenants.*"}
           - {name: keys and tenancy, targets: "com.meterbook.identity.apikeys.*,com.meterbook.identity.projects.*,com.meterbook.identity.tenancy.*,com.meterbook.identity.idempotency.*"}
-          - {name: web and security, targets: "com.meterbook.identity.web.*,com.meterbook.identity.security.*,com.meterbook.identity.me.*,com.meterbook.identity.IdentityApplication,com.meterbook.identity.AppConfig"}
+          - {name: web and security, targets: "com.meterbook.identity.web.*,com.meterbook.identity.security.*,com.meterbook.identity.me.*,com.meterbook.identity.audit.*,com.meterbook.identity.IdentityApplication,com.meterbook.identity.AppConfig"}
     defaults:
       run:
         # Job defaults replace the workflow defaults: repeat the shell, or pipefail is lost.

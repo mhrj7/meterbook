@@ -29,11 +29,8 @@ record ScimTestSupport(UUID tenant, String domain, String token) {
               .set(Tables.TENANT_DOMAINS.TENANT_ID, id)
               .execute();
         });
-    String token =
-        tokens
-            .issue(
-                TestCallers.tenantUser(UUID.randomUUID(), id, Role.TENANT_ADMIN).caller(), "test")
-            .secret();
+    var admin = TestCallers.tenantUser(UUID.randomUUID(), id, Role.TENANT_ADMIN);
+    String token = TestCallers.as(admin, () -> tokens.issue(admin.caller(), "test")).secret();
     return new ScimTestSupport(id, domain, token);
   }
 

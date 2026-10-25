@@ -72,7 +72,7 @@ class ApiKeyApiTest {
     tenant = newTenant();
     admin = TestCallers.tenantUser(UUID.randomUUID(), tenant, Role.TENANT_ADMIN);
     member = TestCallers.tenantUser(UUID.randomUUID(), tenant);
-    project = projects.create(admin.caller(), "Checkout", "checkout");
+    project = TestCallers.as(admin, () -> projects.create(admin.caller(), "Checkout", "checkout"));
     production = project.environments().get(0).id().toString();
     sandbox = project.environments().get(1).id().toString();
   }
@@ -439,16 +439,28 @@ class ApiKeyApiTest {
   void an_environment_has_at_most_50_live_keys_and_expired_ones_do_not_count() throws Exception {
     UUID env = UUID.fromString(sandbox);
     for (int i = 0; i < ApiKeys.MAX_KEYS_PER_ENVIRONMENT - 1; i++) {
-      keys.create(
-          admin.caller(), project.id(), env, "k" + i, List.of("usage:read"), Optional.empty());
+      String name = "k" + i;
+      TestCallers.as(
+          admin,
+          () ->
+              keys.create(
+                  admin.caller(),
+                  project.id(),
+                  env,
+                  name,
+                  List.of("usage:read"),
+                  Optional.empty()));
     }
-    keys.create(
-        admin.caller(),
-        project.id(),
-        env,
-        "short-lived",
-        List.of("usage:read"),
-        Optional.of(OffsetDateTime.now(clock).plusMinutes(1)));
+    TestCallers.as(
+        admin,
+        () ->
+            keys.create(
+                admin.caller(),
+                project.id(),
+                env,
+                "short-lived",
+                List.of("usage:read"),
+                Optional.of(OffsetDateTime.now(clock).plusMinutes(1))));
     create(admin, sandbox, "{\"name\":\"x\",\"scopes\":[\"usage:read\"]}")
         .andExpect(status().isUnprocessableContent())
         .andExpect(jsonPath("$.error.code").value("api_key_limit_reached"));

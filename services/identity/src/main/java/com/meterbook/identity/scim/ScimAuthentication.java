@@ -24,6 +24,10 @@ public final class ScimAuthentication extends AbstractAuthenticationToken {
     return tenantId;
   }
 
+  public UUID tokenId() {
+    return tokenId;
+  }
+
   @Override
   public Object getCredentials() {
     return "";

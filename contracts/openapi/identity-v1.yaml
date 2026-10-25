@@ -34,6 +34,8 @@ tags:
     description: Credentials for the tenant's SCIM client.
   - name: scim
     description: SCIM 2.0 service provider (RFC 7643, RFC 7644).
+  - name: audit
+    description: The tenant's audit log (MB-T11, ADR-0013).
 
 paths:
   /v1/me:
@@ -561,6 +563,39 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+
+  /v1/audit-events:
+    get:
+      tags: [audit]
+      operationId: listAuditEvents
+      summary: List the tenant's audit events, newest first
+      description: |
+        Requires the `tenant-admin` role. Every change made through this API or SCIM is recorded with its actor and
+        request ID, in the same transaction as the change. Calls refused with 403 or 404 are recorded too, as
+        `denied` and `not_found`, including attempts to reach another tenant's resources: those appear here, in
+        the caller's own log, never in the other tenant's. Events cannot be changed or deleted.
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/StartingAfter"
+        - name: action
+          in: query
+          description: Only events of this action, for example `project.updated`.
+          schema: { type: string, pattern: "^[a-z_]+\\.[a-z_]+$" }
+        - name: target_id
+          in: query
+          description: Only events about this resource.
+          schema: { $ref: "#/components/schemas/Id" }
+      responses:
+        "200":
+          description: A page of events.
+          headers:
+            Request-Id: { $ref: "#/components/headers/RequestId" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuditEventList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
 
   /scim/v2/ServiceProviderConfig:
     get:
@@ -1329,6 +1364,57 @@ components:
         data:
           type: array
           items: { $ref: "#/components/schemas/ScimToken" }
+        has_more: { type: boolean }
+        next_cursor: { type: [string, "null"] }
+
+    AuditEvent:
+      type: object
+      required: [id, occurred_at, action, outcome, actor, target, request_id, details]
+      properties:
+        id: { $ref: "#/components/schemas/Id" }
+        occurred_at: { type: string, format: date-time }
+        action:
+          type: string
+          description: |
+            What was attempted: `tenant.created`, `sso_connection.created|deleted`, `project.created|updated`,
+            `environment.created`, `api_key.created|revoked|rotated`, `scim_token.created|revoked`,
+            `scim_user.created|replaced|updated|deleted`, `scim_group.created|updated|deleted`, or, for refused
+            reads only, `<resource>.read`.
+          examples: [project.updated]
+        outcome:
+          type: string
+          enum: [success, denied, not_found]
+        actor:
+          type: object
+          required: [type, id]
+          properties:
+            type: { type: string, enum: [user, scim_token, platform_operator] }
+            id: { $ref: "#/components/schemas/Id" }
+        target:
+          type: object
+          required: [type, id]
+          properties:
+            type: { type: string, examples: [project] }
+            id:
+              description: Null when the request named no valid ID.
+              oneOf:
+                - { $ref: "#/components/schemas/Id" }
+                - { type: "null" }
+        request_id:
+          type: string
+          description: The `Request-Id` of the call that caused the event.
+        details:
+          type: object
+          description: Non-secret identifiers and the names of changed fields; never secrets or personal data.
+          additionalProperties: { type: string }
+
+    AuditEventList:
+      type: object
+      required: [data, has_more]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/AuditEvent" }
         has_more: { type: boolean }
         next_cursor: { type: [string, "null"] }
 

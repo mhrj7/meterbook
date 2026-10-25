@@ -4,6 +4,8 @@ import static com.meterbook.identity.db.Tables.ENVIRONMENTS;
 import static com.meterbook.identity.db.Tables.PROJECTS;
 import static com.meterbook.identity.db.Tables.TENANTS;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.db.tables.records.EnvironmentsRecord;
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
@@ -47,11 +49,13 @@ public class Projects {
 
   private final DSLContext db;
   private final TenantScope scope;
+  private final AuditLog audit;
   private final Clock clock;
 
-  public Projects(DSLContext db, TenantScope scope, Clock clock) {
+  public Projects(DSLContext db, TenantScope scope, AuditLog audit, Clock clock) {
     this.db = db;
     this.scope = scope;
+    this.audit = audit;
     this.clock = clock;
   }
 
@@ -83,6 +87,7 @@ public class Projects {
                 .execute();
             insertEnvironment(tenant, id, "Production", "production", "live");
             insertEnvironment(tenant, id, "Sandbox", "sandbox", "test");
+            audit.record(tenant, AuditAction.PROJECT_CREATED, id);
             return find(tenant, id);
           });
     } catch (DataIntegrityViolationException e) {
@@ -136,6 +141,7 @@ public class Projects {
           if (updated == 0) {
             throw projectNotFound();
           }
+          audit.record(tenant, AuditAction.PROJECT_UPDATED, id, Map.of("changed", "name"));
           return find(tenant, id);
         });
   }
@@ -163,7 +169,14 @@ public class Projects {
                   "a project can have at most " + MAX_ENVIRONMENTS + " environments",
                   null);
             }
-            return environment(insertEnvironment(tenant, projectId, name, slug, kind));
+            Environment environment =
+                environment(insertEnvironment(tenant, projectId, name, slug, kind));
+            audit.record(
+                tenant,
+                AuditAction.ENVIRONMENT_CREATED,
+                environment.id(),
+                Map.of("project_id", projectId.toString()));
+            return environment;
           });
     } catch (DataIntegrityViolationException e) {
       throw ApiException.conflict(

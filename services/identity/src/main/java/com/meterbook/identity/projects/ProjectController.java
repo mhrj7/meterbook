@@ -1,5 +1,7 @@
 package com.meterbook.identity.projects;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.Audited;
 import com.meterbook.identity.idempotency.Idempotency;
 import com.meterbook.identity.security.CallerAuthentication;
 import com.meterbook.identity.web.ApiException;
@@ -66,6 +68,7 @@ public class ProjectController {
   }
 
   @PostMapping("/v1/projects")
+  @Audited(value = AuditAction.PROJECT_CREATED, targetVariable = "")
   public ResponseEntity<?> create(
       CallerAuthentication auth,
       @RequestHeader(name = Idempotency.HEADER, required = false) String key,
@@ -92,17 +95,20 @@ public class ProjectController {
   }
 
   @GetMapping("/v1/projects/{id}")
+  @Audited(AuditAction.PROJECT_READ)
   public Projects.Project get(CallerAuthentication auth, @PathVariable UUID id) {
     return projects.get(auth.caller(), id);
   }
 
   @PatchMapping("/v1/projects/{id}")
+  @Audited(AuditAction.PROJECT_UPDATED)
   public Projects.Project rename(
       CallerAuthentication auth, @PathVariable UUID id, @Valid @RequestBody UpdateProject body) {
     return projects.rename(auth.caller(), id, body.name());
   }
 
   @PostMapping("/v1/projects/{id}/environments")
+  @Audited(value = AuditAction.ENVIRONMENT_CREATED, targetVariable = "id", targetType = "project")
   public ResponseEntity<?> createEnvironment(
       CallerAuthentication auth,
       @PathVariable UUID id,
@@ -123,6 +129,7 @@ public class ProjectController {
   }
 
   @GetMapping("/v1/projects/{id}/environments")
+  @Audited(value = AuditAction.ENVIRONMENT_READ, targetVariable = "id", targetType = "project")
   public EnvironmentList listEnvironments(
       CallerAuthentication auth,
       @PathVariable UUID id,
@@ -134,6 +141,7 @@ public class ProjectController {
   }
 
   @GetMapping("/v1/projects/{id}/environments/{environmentId}")
+  @Audited(value = AuditAction.ENVIRONMENT_READ, targetVariable = "environmentId")
   public Projects.Environment getEnvironment(
       CallerAuthentication auth, @PathVariable UUID id, @PathVariable UUID environmentId) {
     return projects.getEnvironment(auth.caller(), id, environmentId);

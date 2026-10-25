@@ -1,5 +1,7 @@
 package com.meterbook.identity.tenants;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.directory.Directory;
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
@@ -39,13 +41,19 @@ public class TenantService {
   private final Directory directory;
   private final TenantRepository tenants;
   private final TenantScope scope;
+  private final AuditLog audit;
   private final Clock clock;
 
   public TenantService(
-      Directory directory, TenantRepository tenants, TenantScope scope, Clock clock) {
+      Directory directory,
+      TenantRepository tenants,
+      TenantScope scope,
+      AuditLog audit,
+      Clock clock) {
     this.directory = directory;
     this.tenants = tenants;
     this.scope = scope;
+    this.audit = audit;
     this.clock = clock;
   }
 
@@ -102,7 +110,13 @@ public class TenantService {
       TenantRepository.Tenant tenant =
           new TenantRepository.Tenant(
               organization, request.name(), request.slug(), domains, OffsetDateTime.now(clock));
-      scope.inTenant(tenant.id(), () -> tenants.insert(tenant));
+      // Recorded in the new tenant's own log, so its admins see who created it.
+      scope.inTenant(
+          tenant.id(),
+          () -> {
+            tenants.insert(tenant);
+            audit.record(tenant.id(), AuditAction.TENANT_CREATED, tenant.id());
+          });
       return tenant;
     } catch (RuntimeException e) {
       undo(organization, createdUser);

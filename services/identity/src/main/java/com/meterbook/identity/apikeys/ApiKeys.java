@@ -3,6 +3,8 @@ package com.meterbook.identity.apikeys;
 import static com.meterbook.identity.db.Tables.API_KEYS;
 import static com.meterbook.identity.db.Tables.ENVIRONMENTS;
 
+import com.meterbook.identity.audit.AuditAction;
+import com.meterbook.identity.audit.AuditLog;
 import com.meterbook.identity.db.tables.records.ApiKeysRecord;
 import com.meterbook.identity.security.Caller;
 import com.meterbook.identity.security.Role;
@@ -18,6 +20,7 @@ import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -97,12 +100,14 @@ public class ApiKeys {
 
   private final DSLContext db;
   private final TenantScope scope;
+  private final AuditLog audit;
   private final Clock clock;
   private final SecureRandom random = new SecureRandom();
 
-  public ApiKeys(DSLContext db, TenantScope scope, Clock clock) {
+  public ApiKeys(DSLContext db, TenantScope scope, AuditLog audit, Clock clock) {
     this.db = db;
     this.scope = scope;
+    this.audit = audit;
     this.clock = clock;
   }
 
@@ -135,8 +140,22 @@ public class ApiKeys {
                     + " keys; revoke unused ones first",
                 null);
           }
-          return insert(
-              tenant, projectId, environmentId, kind, name, checked, expiresAt.orElse(null), now);
+          Issued issued =
+              insert(
+                  tenant,
+                  projectId,
+                  environmentId,
+                  kind,
+                  name,
+                  checked,
+                  expiresAt.orElse(null),
+                  now);
+          audit.record(
+              tenant,
+              AuditAction.API_KEY_CREATED,
+              issued.key().id(),
+              Map.of("environment_id", environmentId.toString()));
+          return issued;
         });
   }
 
@@ -177,18 +196,24 @@ public class ApiKeys {
   /** Revokes a key at once; identity rejects it from the next request. */
   public void revoke(Caller caller, UUID projectId, UUID environmentId, UUID id) {
     UUID tenant = adminTenant(caller);
-    int revoked =
-        scope.inTenant(
-            tenant,
-            () ->
-                db.update(API_KEYS)
-                    .set(API_KEYS.REVOKED_AT, OffsetDateTime.now(clock))
-                    .where(live(tenant, projectId, environmentId))
-                    .and(API_KEYS.ID.eq(id))
-                    .execute());
-    if (revoked == 0) {
-      throw keyNotFound();
-    }
+    scope.inTenant(
+        tenant,
+        () -> {
+          int revoked =
+              db.update(API_KEYS)
+                  .set(API_KEYS.REVOKED_AT, OffsetDateTime.now(clock))
+                  .where(live(tenant, projectId, environmentId))
+                  .and(API_KEYS.ID.eq(id))
+                  .execute();
+          if (revoked == 0) {
+            throw keyNotFound();
+          }
+          audit.record(
+              tenant,
+              AuditAction.API_KEY_REVOKED,
+              id,
+              Map.of("environment_id", environmentId.toString()));
+        });
   }
 
   /**
@@ -236,6 +261,15 @@ public class ApiKeys {
               .set(API_KEYS.EXPIRES_AT, oldExpiry)
               .where(API_KEYS.ID.eq(id))
               .execute();
+          audit.record(
+              tenant,
+              AuditAction.API_KEY_ROTATED,
+              successor.key().id(),
+              Map.of(
+                  "environment_id",
+                  environmentId.toString(),
+                  "replaced_api_key_id",
+                  id.toString()));
           return successor;
         });
   }
