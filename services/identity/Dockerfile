@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.17
 # Identity service image: built from the locked Gradle build, run on distroless Java 25 as a non-root user.
 
-FROM mirror.gcr.io/library/eclipse-temurin:25-jdk-noble@sha256:ba0f0e1a33864105e1d454e88105c617ab40f71062db1f306bf58be32a3f8e5e AS build
+FROM mirror.gcr.io/library/eclipse-temurin:25-jdk-noble@sha256:7247bd8d2aeec64efe908dc72396d88101417d24ce3642703728382d96afb965 AS build
 WORKDIR /src
 ENV GRADLE_USER_HOME=/cache/gradle
 # Dependencies first, so source changes reuse the dependency layer.
@@ -13,7 +13,7 @@ COPY src src
 RUN --mount=type=cache,target=/cache/gradle ./gradlew --no-daemon --quiet bootJar \
  && java -Djarmode=tools -jar build/libs/identity.jar extract --layers --launcher --destination /layers
 
-FROM gcr.io/distroless/java25-debian13:nonroot@sha256:f7ef4e6822a6f57b90cdc91ad19e7e02923f3f491eccda918fd0be012d3bd8ac
+FROM gcr.io/distroless/java25-debian13:nonroot@sha256:fc6f4aec634ee433ff16a5d18814181e7928f4be9f434b44b48231e2eb7becee
 WORKDIR /app
 COPY --from=build /layers/dependencies/ ./
 COPY --from=build /layers/spring-boot-loader/ ./
